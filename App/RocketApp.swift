@@ -37,6 +37,10 @@ struct DownloadCommands: Commands {
     let downloads: DownloadsModel
 
     var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Download…") { downloads.beginAdding() }
+                .keyboardShortcut("n")
+        }
         CommandMenu("Download") {
             Button("Show in Finder") { downloads.reveal(downloads.selection) }
                 .keyboardShortcut("o")

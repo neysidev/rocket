@@ -52,4 +52,25 @@ import Testing
             try rep.representation(using: .png, properties: [:])!.write(to: url)
         }
     }
+
+    @Test func addSheetRenders() async throws {
+        let model = AddDownloadsModel(
+            text: "https://releases.example.com/ubuntu-24.04-desktop-amd64.iso\nhttps://broken.example/x.zip\nhttps://example.com/paper.pdf",
+            folder: URL(filePath: "/Users/me/Downloads", directoryHint: .isDirectory), agent: ProbingAgent(), existing: [],
+            fileExists: { $0.lastPathComponent == "paper.pdf" }
+        )
+        await model.review()
+        let view = AddDownloadsSheet(model: model) { _ in }
+            .background(RocketColor.panel)
+            .environment(\.colorScheme, .dark)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        var image: CGImage?
+        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { image = renderer.cgImage }
+        let rendered = try #require(image)
+        if let dir = ProcessInfo.processInfo.environment["ROCKET_RENDER_DIR"] {
+            try NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:])!
+                .write(to: URL(filePath: dir).appending(path: "add-sheet.png"))
+        }
+    }
 }

@@ -41,6 +41,12 @@ public actor DownloadScheduler {
 
     // MARK: Commands
 
+    /// What the server says about a URL, for the add sheet.
+    public func probe(_ url: URL) async throws -> RemoteFileInfo {
+        guard ["http", "https"].contains(url.scheme?.lowercased()) else { throw DownloadError.invalidURL }
+        return try await transport.probe(url)
+    }
+
     /// Probes the URL (FR-ADD-02), stores the download and queues it.
     public func add(url: URL, folder: URL, fileName: String? = nil, connections: Int = 8) async throws -> Download {
         guard ["http", "https"].contains(url.scheme?.lowercased()) else { throw DownloadError.invalidURL }

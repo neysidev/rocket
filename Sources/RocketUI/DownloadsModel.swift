@@ -85,6 +85,10 @@ public final class DownloadsModel {
     public var selection: Set<UUID> = []
     /// Last command error, shown to the user once.
     public var alert: String?
+    /// The add sheet, when open.
+    public var adding: AddDownloadsModel?
+    public var defaultFolder: URL = .downloadsDirectory
+    public var defaultConnections = 8
 
     private var samples: [UUID: (bytes: Int64, time: ContinuousClock.Instant, speed: Double)] = [:]
 
@@ -146,6 +150,25 @@ public final class DownloadsModel {
         let speed = last.speed == 0 ? instant : last.speed * 0.7 + instant * 0.3
         samples[download.id] = (download.receivedBytes, now, speed)
         return speed
+    }
+
+    // MARK: Adding
+
+    /// Opens the add sheet with `links`, or with whatever links are on the clipboard.
+    public func beginAdding(_ links: [URL]? = nil) {
+        let links = links ?? LinkExtractor.urls(in: NSPasteboard.general.string(forType: .string) ?? "")
+        adding = AddDownloadsModel(
+            text: links.map(\.absoluteString).joined(separator: "\n"), folder: defaultFolder,
+            connections: defaultConnections, agent: agent, existing: items.map(\.download)
+        )
+    }
+
+    /// After the sheet: show the new (or existing) downloads.
+    public func finishAdding(_ ids: [UUID]) async {
+        await refresh()
+        filter = .all
+        search = ""
+        selection = Set(ids)
     }
 
     // MARK: Commands

@@ -50,6 +50,8 @@ struct AgentPeerHandler: XPCPeerHandler {
             case let .remove(id, deleteFile):
                 try await scheduler.remove(id: id, deleteFile: deleteFile)
                 return .ok
+            case .probe(let url):
+                return .info(try await scheduler.probe(url))
             case .snapshot:
                 return .snapshot(try await scheduler.snapshot())
             }

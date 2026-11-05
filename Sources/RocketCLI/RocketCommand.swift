@@ -10,7 +10,7 @@ struct RocketCommand: AsyncParsableCommand {
         commandName: "rocket",
         abstract: "Fast, resumable downloads from the terminal.",
         version: "API \(RocketAPI.version.major).\(RocketAPI.version.minor)",
-        subcommands: [Add.self, List.self, Pause.self, Resume.self, Cancel.self]
+        subcommands: [Add.self, Info.self, List.self, Pause.self, Resume.self, Cancel.self]
     )
 
     /// Same as ArgumentParser's default, but usage errors exit 2 (TRD) instead of 64.
@@ -57,6 +57,23 @@ struct Add: AsyncParsableCommand {
         let finished = try await Agent.waitForEnd(of: download.id)
         Output.print(finished, json: json)
         if finished.state != .completed { throw ExitCode.failure }
+    }
+}
+
+struct Info: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Show what the server reports about a URL without downloading.")
+    @Argument(help: "http or https URL.") var url: String
+    @Flag(help: "Print JSON.") var json = false
+
+    func run() async throws {
+        guard let url = URL(string: url) else { throw ValidationError("Not a URL: \(self.url)") }
+        guard case .info(let info) = try await Agent.send(.probe(url: url)) else { throw ExitCode.failure }
+        if json { return Output.printJSON(info) }
+        print("Name:       \(info.suggestedFileName ?? "-")")
+        print("Size:       \(info.totalBytes.map(Output.bytes) ?? "unknown")")
+        print("Type:       \(info.contentType ?? "-")")
+        print("Resumable:  \(info.acceptsRanges ? "yes" : "no (single connection)")")
+        if info.finalURL != url { print("Redirects:  \(info.finalURL.absoluteString)") }
     }
 }
 

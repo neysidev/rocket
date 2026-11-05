@@ -33,11 +33,14 @@ public enum Command: Codable, Sendable, Hashable {
     case cancel(id: UUID)
     case remove(id: UUID, deleteFile: Bool)
     case snapshot
+    /// Looks up name, size and range support without adding anything (FR-ADD-02).
+    case probe(url: URL)
 }
 
 public enum Reply: Codable, Sendable {
     case ok
     case download(Download)
+    case info(RemoteFileInfo)
     case snapshot([Download])
     case error(String)
 }

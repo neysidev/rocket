@@ -18,12 +18,14 @@ The `rocket` CLI ships inside the app at `Contents/Helpers/rocket`:
 
 ```sh
 rocket add <url> [--dir ~/Downloads] [--name f.iso] [--connections 8] [--wait]
+rocket info <url>
 rocket list [--json]
 rocket pause|resume|cancel <id-prefix>
 ```
 
-`Rocket.xcodeproj` is generated from `project.yml`; don't edit it by hand. On first launch macOS may ask you
-to allow Rocket's background agent in System Settings > General > Login Items.
+`Rocket.xcodeproj` is generated from `project.yml`; don't edit it by hand. Debug builds: `run-app.sh` loads
+`rocketd` into launchd directly. Release builds register it with `SMAppService`, and macOS may ask you to allow
+it in System Settings > General > Login Items.
 
 ## Layout
 

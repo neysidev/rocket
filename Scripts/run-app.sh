@@ -1,5 +1,5 @@
 #!/bin/sh
-# Generate the Xcode project, build the app (with rocketd and the rocket CLI inside), and open it.
+# Generate the Xcode project, build the app (with rocketd and the rocket CLI inside), load the agent, and open the app.
 set -e
 cd "$(dirname "$0")/.."
 
@@ -11,29 +11,30 @@ fi
 command -v xcodegen >/dev/null || { echo "Install XcodeGen: brew install xcodegen" >&2; exit 1; }
 xcodegen generate --quiet
 
-APP=".build/xcode/Build/Products/Debug/Rocket Downloader.app"
-AGENT="gui/$(id -u)/io.github.neysidev.rocket.agent"
-BEFORE=$(cksum "$APP/Contents/MacOS/rocketd" 2>/dev/null || true)
-
 xcodebuild -project Rocket.xcodeproj -scheme Rocket -configuration Debug \
     -derivedDataPath .build/xcode -quiet build
 
-quit_app() {
-    osascript -e 'quit app "Rocket Downloader"' 2>/dev/null || true
-    while pgrep -x "Rocket Downloader" >/dev/null; do sleep 0.2; done
-}
+APP="$PWD/.build/xcode/Build/Products/Debug/Rocket Downloader.app"
+LABEL="io.github.neysidev.rocket.agent"
+DOMAIN="gui/$(id -u)"
 
-quit_app
-launchctl bootout "$AGENT" 2>/dev/null || true
+osascript -e 'quit app "Rocket Downloader"' 2>/dev/null || true
+while pgrep -x "Rocket Downloader" >/dev/null; do sleep 0.2; done
 
-# Registering the agent pins its code signature (cdhash). Ad-hoc builds get a new one on every build, and
-# launchd refuses the new rocketd until the app has registered that build once and the job is reloaded.
-# So when the agent changed: launch once to register it, then reload the job. Signed builds won't need this.
-if [ "$BEFORE" != "$(cksum "$APP/Contents/MacOS/rocketd")" ]; then
-    open "$APP"
-    for _ in $(seq 50); do launchctl print "$AGENT" >/dev/null 2>&1 && break; sleep 0.2; done
-    quit_app
-    launchctl bootout "$AGENT" 2>/dev/null || true
-fi
+# Debug builds load the agent straight into launchd. Release builds register it with SMAppService, which pins the
+# agent's code signature; ad-hoc Debug signatures change on every build, so launchd would refuse the new rocketd.
+launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+PLIST="$PWD/.build/xcode/$LABEL.plist"
+cat > "$PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>Program</key><string>$APP/Contents/MacOS/rocketd</string>
+  <key>MachServices</key><dict><key>$LABEL</key><true/></dict>
+  <key>ProcessType</key><string>Background</string>
+</dict></plist>
+PLIST
+launchctl bootstrap "$DOMAIN" "$PLIST"
 
 open "$APP"

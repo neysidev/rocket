@@ -31,6 +31,7 @@ public struct DownloadListView: View {
                     Task { await model.toggle(ids) }
                     return .handled
                 }
+                .onPasteCommand(of: [.plainText, .url]) { _ in model.beginAdding() }
                 .onDeleteCommand {
                     let ids = model.selection
                     Task { await model.remove(ids) }

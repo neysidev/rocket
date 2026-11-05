@@ -19,12 +19,10 @@ final class AgentConnection {
 
     func connect() async {
         status = .connecting
+        #if !DEBUG
+        // Release: register the bundled LaunchAgent. Debug builds are loaded by Scripts/run-app.sh instead,
+        // because registration pins the agent's code signature, which ad-hoc builds change on every build.
         do {
-            #if DEBUG
-            // Ad-hoc Debug builds change the agent's code signature on every build. run-app.sh boots the stale
-            // job out of launchd; registering again here loads the new binary with a fresh launch constraint.
-            if service.status == .enabled { try await service.unregister() }
-            #endif
             if service.status != .enabled { try service.register() }
         } catch {
             status = service.status == .requiresApproval ? .needsApproval : .unavailable(error.localizedDescription)
@@ -34,6 +32,7 @@ final class AgentConnection {
             status = .needsApproval
             return
         }
+        #endif
         do {
             let client = try self.client ?? AgentClient()
             self.client = client
