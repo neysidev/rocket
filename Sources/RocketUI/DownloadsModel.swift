@@ -212,6 +212,8 @@ public final class DownloadsModel {
     private var lastStates: [UUID: DownloadState]?
     /// Called when a download finishes or fails while the app is watching.
     public var onEvent: (@MainActor (DownloadEvent) -> Void)?
+    /// State changes after the first snapshot (previous, next).
+    public var onStateTransition: (@MainActor (UUID, DownloadState, DownloadState) -> Void)?
 
     public init(agent: (any AgentCommanding)? = nil, settings: AppSettings = AppSettings()) {
         self.agent = agent
@@ -318,6 +320,9 @@ public final class DownloadsModel {
     func apply(_ downloads: [Download], now: ContinuousClock.Instant) {
         if let lastStates {
             for download in downloads where lastStates[download.id] != download.state {
+                if let previous = lastStates[download.id] {
+                    onStateTransition?(download.id, previous, download.state)
+                }
                 if download.state == .completed { onEvent?(.completed(download)) }
                 if download.state == .failed { onEvent?(.failed(download)) }
             }

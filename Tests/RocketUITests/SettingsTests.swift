@@ -12,6 +12,7 @@ import Testing
         #expect(defaults.folder == .downloadsDirectory)
         #expect(defaults.connections == 8)
         #expect(defaults.notificationsEnabled)
+        #expect(!defaults.soundEffectsEnabled)
     }
 
     @Test func settingsPersistForTheAgent() {
@@ -19,11 +20,13 @@ import Testing
         settings.folder = URL(filePath: "/Volumes/Media/Incoming", directoryHint: .isDirectory)
         settings.connections = 4
         settings.notificationsEnabled = false
+        settings.soundEffectsEnabled = true
 
         let agentView = RocketDefaults(store: store)
         #expect(agentView.folder.path == "/Volumes/Media/Incoming")
         #expect(agentView.connections == 4)
         #expect(!agentView.notificationsEnabled)
+        #expect(agentView.soundEffectsEnabled)
     }
 
     @Test func connectionsAreClamped() {

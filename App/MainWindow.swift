@@ -6,6 +6,7 @@ import SwiftUI
 /// Sidebar (brand, status filters, queues, activity) → header and download list or grid; dialogs are Rocket modals.
 struct MainWindow: View {
     @Bindable var downloads: DownloadsModel
+    @Environment(\.soundEffects) private var soundEffects
 
     var body: some View {
         HStack(spacing: 0) {
@@ -36,8 +37,16 @@ struct MainWindow: View {
             QueueEditor(queue: queue) { saved in Task { await downloads.saveQueue(saved) } }
         }
         .rocketModal(item: $downloads.adding) { adding in
-            AddDownloadsSheet(model: adding) { ids in Task { await downloads.finishAdding(ids) } }
+            AddDownloadsSheet(model: adding) { ids in
+                Task {
+                    await downloads.finishAdding(ids)
+                    if !ids.isEmpty { soundEffects?.playAdded() }
+                }
+            }
         }
         .rocketAlert($downloads.alert)
+        .onChange(of: downloads.alert) { _, message in
+            if message != nil { soundEffects?.playWarning() }
+        }
     }
 }

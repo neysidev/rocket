@@ -10,6 +10,7 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
         static let folder = "defaultFolderPath"
         static let connections = "defaultConnections"
         static let notifications = "notificationsEnabled"
+        static let soundEffects = "soundEffectsEnabled"
         static let globalSpeedLimit = "globalSpeedLimit"
         static let sleepPrevention = "sleepPrevention"
         static let autoSort = "autoSortByType"
@@ -86,5 +87,11 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
     public var notificationsEnabled: Bool {
         get { store.object(forKey: Key.notifications) as? Bool ?? true }
         nonmutating set { store.set(newValue, forKey: Key.notifications) }
+    }
+
+    /// In-app and notification sounds. Off by default so audio is opt-in.
+    public var soundEffectsEnabled: Bool {
+        get { store.bool(forKey: Key.soundEffects) }
+        nonmutating set { store.set(newValue, forKey: Key.soundEffects) }
     }
 }

@@ -106,7 +106,6 @@ public final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             content.body = download.fileName
             content.subtitle = download.failure?.userMessage ?? ""
             content.categoryIdentifier = Category.failed.rawValue
-            content.sound = .default
         }
         content.userInfo = ["id": download.id.uuidString]
         return UNNotificationRequest(identifier: download.id.uuidString, content: content, trigger: nil)
@@ -117,7 +116,7 @@ public final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     public nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter, willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        [.banner, .list]
     }
 
     public nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {

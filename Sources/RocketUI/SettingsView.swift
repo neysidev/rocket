@@ -13,6 +13,12 @@ public final class AppSettings {
     public var folder: URL { didSet { defaults.folder = folder } }
     public var connections: Int { didSet { defaults.connections = connections } }
     public var notificationsEnabled: Bool { didSet { defaults.notificationsEnabled = notificationsEnabled } }
+    public var soundEffectsEnabled: Bool {
+        didSet {
+            defaults.soundEffectsEnabled = soundEffectsEnabled
+            onSoundEffectsChange?(soundEffectsEnabled)
+        }
+    }
     /// Mirror of the agent's global limit; the agent persists it when the app sets it over XPC.
     public var globalSpeedLimit: Int64?
     public var sleepPrevention: SleepPrevention { didSet { defaults.sleepPrevention = sleepPrevention } }
@@ -30,6 +36,7 @@ public final class AppSettings {
     public var clipboardExtensions: String { didSet { defaults.clipboardExtensions = Self.extensions(clipboardExtensions) } }
     /// The app starts or stops the clipboard watcher here.
     public var onWatchClipboardChange: ((Bool) -> Void)?
+    public var onSoundEffectsChange: ((Bool) -> Void)?
     public var clipboardExtensionSet: Set<String> { Set(Self.extensions(clipboardExtensions)) }
     public private(set) var launchAtLogin = false
     public private(set) var launchAtLoginError: String?
@@ -39,6 +46,7 @@ public final class AppSettings {
         folder = defaults.folder
         connections = defaults.connections
         notificationsEnabled = defaults.notificationsEnabled
+        soundEffectsEnabled = defaults.soundEffectsEnabled
         globalSpeedLimit = defaults.globalSpeedLimit
         sleepPrevention = defaults.sleepPrevention
         autoSort = defaults.autoSort
@@ -206,6 +214,12 @@ struct GeneralSettings: View {
                 }
                 RocketFormRow(String(localized: "Show progress and count on the Dock icon")) {
                     Toggle("Show progress and count on the Dock icon", isOn: $settings.showDockProgress).labelsHidden().toggleStyle(.rocketSwitch)
+                }
+            }
+            RocketFormSection(String(localized: "Sound Effects"),
+                              footer: String(localized: "Short sounds for downloads and important feedback. Uses the system output volume.")) {
+                RocketFormRow(String(localized: "Play sound effects")) {
+                    Toggle("Play sound effects", isOn: $settings.soundEffectsEnabled).labelsHidden().toggleStyle(.rocketSwitch)
                 }
             }
             RocketFormSection(String(localized: "Startup"), footer: settings.launchAtLoginError) {

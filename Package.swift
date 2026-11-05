@@ -33,7 +33,11 @@ let package = Package(
         // UI layer
         .target(name: "RocketDesign"),
         // App screens and their view models; the app target is only the composition root.
-        .target(name: "RocketUI", dependencies: ["RocketCore", "RocketIPC", "RocketDesign"]),
+        .target(
+            name: "RocketUI",
+            dependencies: ["RocketCore", "RocketIPC", "RocketDesign"],
+            resources: [.process("Resources")]
+        ),
 
         // The app and rocketd are built by Rocket.xcodeproj (see project.yml); the CLI builds here too for `swift run rocket`.
         .executableTarget(

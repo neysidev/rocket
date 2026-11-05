@@ -10,6 +10,7 @@ struct RocketApp: App {
         WindowGroup("Rocket", id: "main") {
             MainWindow(downloads: app.downloads)
                 .environment(app.agent)
+                .soundEffects(app.sounds)
                 .frame(minWidth: 760, minHeight: 480)
                 .onChange(of: app.agent.status) { app.downloads.agent = app.agent.client }
                 // External links go to the open window instead of opening another one.
@@ -47,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let downloads = DownloadsModel()
     let updater = Updater()
     private var notifier: Notifier?
+    private(set) var sounds: SoundManager?
     private var watcher: ClipboardWatcher?
     private let services = ServicesProvider()
     private let dock = DockProgress()
@@ -55,14 +57,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = services
         let settings = downloads.settings
+        let sounds = SoundManager(isEnabled: { settings.soundEffectsEnabled })
+        self.sounds = sounds
         let notifier = Notifier(downloads: downloads, isEnabled: { settings.notificationsEnabled })
         self.notifier = notifier
+        settings.onSoundEffectsChange = { sounds.setEnabled($0) }
         let watcher = ClipboardWatcher(extensions: { settings.clipboardExtensionSet }, offer: { notifier.offer(copied: $0) })
         self.watcher = watcher
         settings.onWatchClipboardChange = { watcher.setEnabled($0) }
         watcher.setEnabled(settings.watchClipboard)
-        downloads.onEvent = { notifier.post($0) }
-        downloads.onUpdate = { [dock, downloads] in
+        downloads.onEvent = { event in
+            sounds.handle(event)
+            notifier.post(event)
+        }
+        downloads.onStateTransition = { id, previous, next in
+            sounds.handleTransition(id: id, from: previous, to: next)
+        }
+        downloads.onUpdate = { [dock, downloads, sounds] in
+            sounds.pruneStarted(excluding: Set(downloads.items.map(\.id)))
             dock.update(count: downloads.transferringCount + downloads.queuedCount, fraction: downloads.overallFraction,
                         enabled: settings.showDockProgress)
         }
