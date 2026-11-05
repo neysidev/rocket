@@ -32,8 +32,10 @@ public struct DownloadListView: View {
                             .foregroundStyle(RocketColor.textSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .rocketTransition(RocketTransition.content)
                 } else if items.isEmpty {
                     EmptyStateView(model: model)
+                        .rocketTransition(RocketTransition.content)
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView {
@@ -45,11 +47,14 @@ public struct DownloadListView: View {
                         .focusEffectDisabled()
                         .focused($focused)
                         .modifier(DownloadKeys(model: model, items: items, anchor: $anchor, columns: model.viewMode == .grid) { id in
-                            proxy.scrollTo(id)
+                            proxy.scrollTo(id, anchor: .center)
                         })
                     }
+                    .rocketTransition(RocketTransition.content)
                 }
             }
+            .id(contentPhase)
+            .rocketAnimation(RocketMotion.standard, value: contentPhase)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(RocketColor.canvas)
@@ -57,6 +62,12 @@ public struct DownloadListView: View {
 
     private var showsFilterBar: Bool {
         model.hasRefinements || Set(model.items.map(\.category)).count > 1
+    }
+
+    private var contentPhase: String {
+        if !model.hasLoaded, model.items.isEmpty { return "loading" }
+        if model.visibleItems.isEmpty { return "empty-\(String(describing: model.filter))-\(model.search)" }
+        return "list-\(model.viewMode)-\(String(describing: model.filter))"
     }
 
     private func list(_ items: [DownloadItem], positions: [UUID: Int]) -> some View {
@@ -67,12 +78,15 @@ public struct DownloadListView: View {
                     .overlay(alignment: .top) {
                         if dropTarget == item.id {
                             Capsule().fill(RocketColor.accent).frame(height: 2).offset(y: -2).padding(.horizontal, RocketSpace.s3)
+                                .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .center)))
                         }
                     }
+                    .rocketTransition(RocketTransition.list)
                     .modifier(ItemInteractions(item: item, items: items, model: model, anchor: $anchor, dropTarget: $dropTarget,
                                                focused: $focused, isQueue: isQueue, reorder: reorder))
             }
         }
+        .rocketAnimation(RocketMotion.standard, value: items.map(\.id))
         .padding(.horizontal, RocketSpace.s3)
         .padding(.vertical, RocketSpace.s3)
     }
@@ -85,12 +99,15 @@ public struct DownloadListView: View {
                     .overlay(alignment: .leading) {
                         if dropTarget == item.id {
                             Capsule().fill(RocketColor.accent).frame(width: 2).offset(x: -RocketSpace.s3 + 2)
+                                .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .center)))
                         }
                     }
+                    .rocketTransition(RocketTransition.list)
                     .modifier(ItemInteractions(item: item, items: items, model: model, anchor: $anchor, dropTarget: $dropTarget,
                                                focused: $focused, isQueue: isQueue, reorder: reorder))
             }
         }
+        .rocketAnimation(RocketMotion.standard, value: items.map(\.id))
         .padding(RocketSpace.s5)
     }
 
@@ -128,7 +145,9 @@ private struct ItemInteractions: ViewModifier {
                 reorder(ids, item.id)
             } isTargeted: { targeted in
                 guard isQueue else { return }
-                if targeted { dropTarget = item.id } else if dropTarget == item.id { dropTarget = nil }
+                withAnimation(RocketMotion.fast) {
+                    if targeted { dropTarget = item.id } else if dropTarget == item.id { dropTarget = nil }
+                }
             }
             .onTapGesture { click() }
             .rocketContextMenu(onOpen: {
@@ -342,15 +361,21 @@ private struct FilterBar: View {
                 }
                 if model.sizeFilter != .any {
                     Chip(title: model.sizeFilter.title) { model.sizeFilter = .any }
+                        .rocketTransition(RocketTransition.reveal)
                 }
                 if model.dateFilter != .any {
                     Chip(title: model.dateFilter.title) { model.dateFilter = .any }
+                        .rocketTransition(RocketTransition.reveal)
                 }
             }
             .padding(.horizontal, RocketSpace.s5)
         }
         .frame(height: 40)
         .overlay(alignment: .bottom) { Rectangle().fill(RocketColor.border).frame(height: 1) }
+        .rocketAnimation(RocketMotion.standard, value: categories.map(\.self))
+        .rocketAnimation(RocketMotion.fast, value: model.category)
+        .rocketAnimation(RocketMotion.fast, value: model.sizeFilter)
+        .rocketAnimation(RocketMotion.fast, value: model.dateFilter)
     }
 
     /// Only categories that exist in the list, plus the selected one, so the bar stays short.
@@ -492,7 +517,7 @@ public struct DownloadSidebar<Footer: View>: View {
                     ForEach(SidebarFilter.statuses) { filter in
                         SidebarRow(title: filter.title, symbol: filter.symbol, count: model.count(filter),
                                    isSelected: model.filter == filter, live: filter == .active && model.isDownloading) {
-                            model.filter = filter
+                            withAnimation(RocketMotion.standard) { model.filter = filter }
                         }
                     }
                     HStack {
@@ -529,7 +554,7 @@ public struct DownloadSidebar<Footer: View>: View {
         SidebarRow(title: queue.name, symbol: queue.schedule == nil ? "tray" : "calendar.badge.clock",
                    count: model.count(.queue(queue.id)), isSelected: model.filter == .queue(queue.id),
                    isDropTarget: dropQueue == queue.id) {
-            model.filter = .queue(queue.id)
+            withAnimation(RocketMotion.standard) { model.filter = .queue(queue.id) }
         }
         .rocketTooltip(queue.schedule?.summary ?? "")
         .dropDestination(for: String.self) { ids, _ in
@@ -538,7 +563,9 @@ public struct DownloadSidebar<Footer: View>: View {
             Task { await model.move(ids, toQueue: queue.id) }
             return !ids.isEmpty
         } isTargeted: { targeted in
-            if targeted { dropQueue = queue.id } else if dropQueue == queue.id { dropQueue = nil }
+            withAnimation(RocketMotion.fast) {
+                if targeted { dropQueue = queue.id } else if dropQueue == queue.id { dropQueue = nil }
+            }
         }
         .rocketContextMenu {
             var items = [
@@ -604,7 +631,9 @@ struct SidebarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(RocketMotion.fast, value: hovering)
+        .rocketAnimation(RocketMotion.fast, value: hovering)
+        .rocketAnimation(RocketMotion.fast, value: isSelected)
+        .rocketAnimation(RocketMotion.fast, value: isDropTarget)
         .accessibilityLabel("\(title), \(count)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -687,12 +716,15 @@ private struct HeaderSearchField: View {
                 .overlay(RoundedRectangle(cornerRadius: RocketRadius.small + 1, style: .continuous)
                     .strokeBorder(focused ? RocketColor.accent : RocketColor.border))
                 .onAppear { focused = true }
+                .rocketTransition(RocketTransition.reveal)
             } else {
                 Button("Search", systemImage: "magnifyingglass") { model.isSearching = true }
                     .buttonStyle(.rocketIcon)
                     .rocketTooltip(String(localized: "Search"), shortcut: "⌘F")
+                    .rocketTransition(RocketTransition.reveal)
             }
         }
+        .rocketAnimation(RocketMotion.spring, value: model.isSearching)
         .onChange(of: model.isSearching) { _, searching in focused = searching }
         .onChange(of: focused) { _, isFocused in
             if !isFocused, model.search.isEmpty { model.isSearching = false }

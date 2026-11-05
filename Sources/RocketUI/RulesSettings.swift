@@ -41,12 +41,17 @@ struct RulesSettings: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, RocketSpace.s7)
                 .rocketCard()
+                .rocketTransition(RocketTransition.content)
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(model.rules.enumerated()), id: \.element.id) { index, rule in
                         RuleRow(rule: rule, model: model, edit: { editing = rule })
+                            .rocketTransition(RocketTransition.list)
                             .overlay(alignment: .top) {
-                                if dropTarget == rule.id { Rectangle().fill(RocketColor.accent).frame(height: 2) }
+                                if dropTarget == rule.id {
+                                    Rectangle().fill(RocketColor.accent).frame(height: 2)
+                                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .center)))
+                                }
                             }
                             .draggable(rule.id)
                             .dropDestination(for: String.self) { ids, _ in
@@ -55,10 +60,13 @@ struct RulesSettings: View {
                                 Task { await model.moveRules(from: IndexSet(integer: from), to: index) }
                                 return true
                             } isTargeted: { targeted in
-                                if targeted { dropTarget = rule.id } else if dropTarget == rule.id { dropTarget = nil }
+                                withAnimation(RocketMotion.fast) {
+                                    if targeted { dropTarget = rule.id } else if dropTarget == rule.id { dropTarget = nil }
+                                }
                             }
                     }
                 }
+                .rocketAnimation(RocketMotion.standard, value: model.rules.map(\.id))
                 .padding(.bottom, -1)
                 .clipShape(RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous))
                 .rocketCard()
@@ -67,6 +75,7 @@ struct RulesSettings: View {
                     .foregroundStyle(RocketColor.textTertiary)
             }
         }
+        .rocketAnimation(RocketMotion.standard, value: model.rules.isEmpty)
     }
 }
 
@@ -108,12 +117,13 @@ private struct RuleRow: View {
                     .rocketTooltip(String(localized: "Delete"))
             }
             .opacity(hovering ? 1 : 0)
+            .offset(x: hovering ? 0 : 4)
         }
+        .rocketAnimation(RocketMotion.fast, value: hovering)
         .rocketFormRowChrome()
         .background(hovering ? RocketColor.hover : .clear)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .animation(RocketMotion.fast, value: hovering)
         .onTapGesture { if (NSApp.currentEvent?.clickCount ?? 1) >= 2 { edit() } }
         .rocketContextMenu {
             [RocketMenuSection(items: [

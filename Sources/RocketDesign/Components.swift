@@ -42,7 +42,7 @@ public struct RocketButtonStyle: ButtonStyle {
                     if style.variant == .secondary { shape.strokeBorder(hovering ? RocketColor.borderStrong : RocketColor.border) }
                 }
                 .contentShape(shape)
-                .scaleEffect(configuration.isPressed ? RocketMotion.pressScale : 1)
+                .rocketPressScale(configuration.isPressed)
                 .opacity(isEnabled ? 1 : 0.4)
                 .onHover { hovering = isEnabled && $0 }
                 .animation(RocketMotion.fast, value: hovering)
@@ -106,7 +106,7 @@ public struct IconButtonStyle: ButtonStyle {
                 .frame(width: style.size, height: style.size)
                 .background(configuration.isPressed || style.isActive ? RocketColor.selected : hovering ? RocketColor.hover : .clear, in: shape)
                 .contentShape(shape)
-                .scaleEffect(configuration.isPressed ? 0.94 : 1)
+                .rocketPressScale(configuration.isPressed, scale: 0.94)
                 .opacity(isEnabled ? 1 : 0.35)
                 .onHover { hovering = isEnabled && $0 }
                 .animation(RocketMotion.fast, value: hovering)
@@ -151,7 +151,7 @@ public struct PillButtonStyle: ButtonStyle {
                 .background(selected ? RocketColor.control : hovering ? RocketColor.hover : .clear, in: Capsule())
                 .overlay(Capsule().strokeBorder(selected ? RocketColor.borderStrong : .clear))
                 .contentShape(Capsule())
-                .scaleEffect(configuration.isPressed ? RocketMotion.pressScale : 1)
+                .rocketPressScale(configuration.isPressed)
                 .onHover { hovering = $0 }
                 .animation(RocketMotion.fast, value: hovering)
                 .animation(RocketMotion.fast, value: configuration.isPressed)
@@ -187,7 +187,9 @@ public struct RocketLinkStyle: ButtonStyle {
                 .opacity(configuration.isPressed ? 0.7 : 1)
                 .contentShape(Rectangle())
                 .onHover { hovering = $0 }
-        }
+                .animation(RocketMotion.fast, value: hovering)
+                .animation(RocketMotion.fast, value: configuration.isPressed)
+            }
     }
 }
 
@@ -275,6 +277,7 @@ public struct StatusGlyph: View {
 
     let kind: Kind
     let size: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(_ kind: Kind, size: CGFloat = 14) {
         self.kind = kind
@@ -300,7 +303,7 @@ public struct StatusGlyph: View {
                 Pie(fraction: max(0.08, fraction ?? 0.25))
                     .fill(color)
                     .padding(size * 0.22)
-                    .animation(RocketMotion.progress, value: fraction)
+                    .animation(reduceMotion ? nil : RocketMotion.progress, value: fraction)
             case .verifying:
                 Circle().stroke(color, lineWidth: 1.5).padding(0.75)
                 Circle().fill(color).padding(size * 0.3)

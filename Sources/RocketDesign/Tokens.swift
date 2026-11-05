@@ -122,6 +122,8 @@ public extension View {
 public enum RocketMotion {
     /// Strong ease-out: instant response, soft landing. Hover, press, small reveals.
     public static let fast = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.14)
+    /// Row insert/remove, selection, sidebar filter changes, disclosure.
+    public static let standard = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)
     /// Menus, popovers, modals entering.
     public static let enter = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.2)
     /// Leaving is quicker than arriving.
@@ -130,6 +132,9 @@ public enum RocketMotion {
     public static let spring = Animation.spring(response: 0.3, dampingFraction: 0.86)
     public static let progress = Animation.linear(duration: 0.2)
     public static let pressScale: CGFloat = 0.97
+
+    /// Duration of the quiet success tint on progress when a download completes.
+    public static let completionFlash: Duration = .seconds(2)
 }
 
 public extension View {

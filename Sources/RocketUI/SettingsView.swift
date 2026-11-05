@@ -104,7 +104,9 @@ public struct SettingsView: View {
                 Color.clear.frame(height: 40).rocketWindowDragArea()
                 Text("Settings").rocketEyebrow().padding(.leading, RocketSpace.s3).padding(.bottom, RocketSpace.s3)
                 ForEach(Page.allCases, id: \.self) { page in
-                    SidebarRow(title: page.title, symbol: page.symbol, count: 0, isSelected: self.page == page) { self.page = page }
+                    SidebarRow(title: page.title, symbol: page.symbol, count: 0, isSelected: self.page == page) {
+                        withAnimation(RocketMotion.standard) { self.page = page }
+                    }
                 }
                 Spacer()
             }
@@ -131,6 +133,9 @@ public struct SettingsView: View {
                             RulesSettings(model: model, editing: $editingRule)
                         }
                     }
+                    .id(page)
+                    .rocketTransition(RocketTransition.content)
+                    .rocketAnimation(RocketMotion.standard, value: page)
                     .padding(.horizontal, RocketSpace.s7)
                     .padding(.bottom, RocketSpace.s7)
                 }

@@ -30,6 +30,9 @@ public struct AddDownloadsSheet: View {
                 case .review: review
                 }
             }
+            .id(model.phase)
+            .rocketTransition(RocketTransition.content)
+            .rocketAnimation(RocketMotion.standard, value: model.phase)
             .padding(.horizontal, RocketSpace.s6)
             .padding(.bottom, RocketSpace.s5)
         } actions: {

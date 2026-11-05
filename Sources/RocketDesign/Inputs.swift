@@ -264,10 +264,11 @@ public struct RocketDisclosure<Content: View>: View {
             .buttonStyle(.plain)
             .accessibilityValue(isExpanded ? Text("Expanded") : Text("Collapsed"))
             if isExpanded {
-                content.transition(.opacity.combined(with: .offset(y: -4)))
+                content
+                    .rocketTransition(RocketTransition.content)
             }
         }
-        .animation(RocketMotion.enter, value: isExpanded)
+        .rocketAnimation(RocketMotion.enter, value: isExpanded)
     }
 }
 

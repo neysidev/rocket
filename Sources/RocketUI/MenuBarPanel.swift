@@ -184,6 +184,7 @@ struct Sparkline: View {
                 Capsule()
                     .fill(index == values.count - 1 ? RocketColor.accent : RocketColor.chartNeutral)
                     .frame(width: 2, height: max(2, 14 * value / peak))
+                    .animation(RocketMotion.progress, value: value)
             }
         }
         .frame(height: 14, alignment: .bottom)
@@ -282,8 +283,10 @@ struct LiveList: View {
         let list = VStack(spacing: 0) {
             ForEach(items) { item in
                 CompactRow(item: item, model: model, openMainWindow: openMainWindow)
+                    .rocketTransition(RocketTransition.list)
             }
         }
+        .rocketAnimation(RocketMotion.standard, value: items.map(\.id))
         // Panel grows with content up to ~640 pt, then the list scrolls.
         if items.count > 6 {
             ScrollView { list }.frame(height: 6 * RocketSize.row)
@@ -335,7 +338,7 @@ struct CompactRow: View {
         .background(hovering ? RocketColor.hover : .clear, in: RoundedRectangle(cornerRadius: RocketRadius.small + 1, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .animation(RocketMotion.fast, value: hovering)
+        .rocketAnimation(RocketMotion.fast, value: hovering)
         .onTapGesture {
             model.filter = .all
             model.selection = [download.id]

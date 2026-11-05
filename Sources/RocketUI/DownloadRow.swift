@@ -29,10 +29,13 @@ struct DownloadRow: View {
             ZStack(alignment: .trailing) {
                 TrailingInfo(item: item)
                     .opacity(hovering ? 0 : 1)
+                    .offset(x: hovering ? 6 : 0)
                 RowActions(item: item, model: model)
                     .opacity(hovering ? 1 : 0)
+                    .offset(x: hovering ? 0 : 6)
                     .allowsHitTesting(hovering)
             }
+            .rocketAnimation(RocketMotion.fast, value: hovering)
         }
         .padding(.horizontal, RocketSpace.s4)
         .frame(height: RocketSize.row)
@@ -42,7 +45,8 @@ struct DownloadRow: View {
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .animation(RocketMotion.fast, value: hovering)
+        .rocketAnimation(RocketMotion.fast, value: hovering)
+        .rocketAnimation(RocketMotion.fast, value: isSelected)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.accessibilityLabel)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -57,24 +61,43 @@ struct DownloadRow: View {
 /// Right column of a row: percent, speed and a bar while transferring, the paused bar, or when it was added.
 private struct TrailingInfo: View {
     let item: DownloadItem
+    @State private var completionFlash = false
 
     var body: some View {
         let download = item.download
-        if download.state.isTransferring || download.state == .paused {
-            VStack(alignment: .trailing, spacing: 6) {
-                LiveMetrics(item: item)
-                RocketProgressBar(
-                    fraction: item.fraction,
-                    tint: download.state == .paused ? RocketColor.textTertiary : RocketColor.accent
-                )
-                .frame(width: 132)
+        Group {
+            if download.state.isTransferring || download.state == .paused || completionFlash {
+                VStack(alignment: .trailing, spacing: 6) {
+                    LiveMetrics(item: item)
+                    RocketProgressBar(
+                        fraction: completionFlash ? 1 : item.fraction,
+                        tint: progressTint(for: download.state)
+                    )
+                    .frame(width: 132)
+                }
+            } else {
+                Text(download.completedAt ?? download.createdAt, format: .dateTime.month(.abbreviated).day())
+                    .font(.rocketLabel)
+                    .foregroundStyle(RocketColor.textTertiary)
+                    .monospacedDigit()
             }
-        } else {
-            Text(download.completedAt ?? download.createdAt, format: .dateTime.month(.abbreviated).day())
-                .font(.rocketLabel)
-                .foregroundStyle(RocketColor.textTertiary)
-                .monospacedDigit()
         }
+        .rocketTransition(.opacity)
+        .rocketAnimation(RocketMotion.standard, value: completionFlash)
+        .rocketAnimation(RocketMotion.standard, value: download.state)
+        .onChange(of: download.state) { previous, state in
+            guard state == .completed, previous != .completed else { return }
+            completionFlash = true
+            Task {
+                try? await Task.sleep(for: RocketMotion.completionFlash)
+                if !Task.isCancelled { completionFlash = false }
+            }
+        }
+    }
+
+    private func progressTint(for state: DownloadState) -> Color {
+        if completionFlash { return RocketColor.success }
+        return state == .paused ? RocketColor.textTertiary : RocketColor.accent
     }
 }
 
@@ -130,7 +153,8 @@ struct DownloadCard: View {
         .overlay(shape.strokeBorder(isSelected ? RocketColor.accent.opacity(0.75) : hovering ? RocketColor.borderStrong : RocketColor.border))
         .contentShape(shape)
         .onHover { hovering = $0 }
-        .animation(RocketMotion.fast, value: hovering)
+        .rocketAnimation(RocketMotion.fast, value: hovering)
+        .rocketAnimation(RocketMotion.fast, value: isSelected)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.accessibilityLabel)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -202,6 +226,7 @@ private struct LiveMetrics: View {
             .lineLimit(1)
             .fixedSize()
             .contentTransition(.numericText())
+            .animation(RocketMotion.progress, value: text)
     }
 
     private var text: String {
@@ -228,9 +253,11 @@ struct StatusLabel: View {
     var body: some View {
         HStack(spacing: 6) {
             StatusGlyph(download.state.glyph(item.fraction), size: 11)
+                .rocketAnimation(RocketMotion.fast, value: download.state)
             Text(download.state.title)
                 .foregroundStyle(download.state.textColor)
                 .fixedSize()
+                .rocketAnimation(RocketMotion.fast, value: download.state)
             if let extra {
                 Text(extra)
                     .foregroundStyle(download.state == .failed ? RocketColor.danger.opacity(0.85) : RocketColor.textSecondary)

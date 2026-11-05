@@ -333,6 +333,7 @@ public struct RocketMenuContent: View {
             return .handled
         }
         .onExitCommand { dismiss() }
+        .rocketAnimation(RocketMotion.fast, value: expanded)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
     }
@@ -361,12 +362,14 @@ public struct RocketMenuContent: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(RocketColor.textTertiary)
                     .rotationEffect(.degrees(expanded.contains(item.id) ? 90 : 0))
+                    .rocketAnimation(RocketMotion.fast, value: expanded.contains(item.id))
             }
         }
         .padding(.leading, RocketSpace.s3 + (depth > 0 ? (hasSymbols ? 24 : 12) : 0))
         .padding(.trailing, RocketSpace.s3)
         .frame(height: 28)
         .background(isHighlighted ? RocketColor.selected : .clear, in: RoundedRectangle(cornerRadius: RocketRadius.small + 1, style: .continuous))
+        .rocketAnimation(RocketMotion.fast, value: isHighlighted)
         .contentShape(Rectangle())
         .onHover { if $0 { highlighted = item.id } else if highlighted == item.id { highlighted = nil } }
         .onTapGesture { if item.isEnabled { activate(item) } }
@@ -695,7 +698,7 @@ private struct TooltipBody: View {
         .padding(.vertical, 5)
         .rocketFloating(radius: RocketRadius.small + 1)
         .opacity(shown || !animated ? 1 : 0)
-        .onAppear { withAnimation(.easeOut(duration: 0.12)) { shown = true } }
+        .onAppear { withAnimation(RocketMotion.fast) { shown = true } }
     }
 }
 
@@ -742,8 +745,6 @@ private struct ModalModifier<Modal: View>: ViewModifier {
     let isPresented: Bool
     let dismiss: () -> Void
     @ViewBuilder let modal: () -> Modal
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     func body(content: Content) -> some View {
         content
             .disabled(isPresented)
@@ -763,10 +764,10 @@ private struct ModalModifier<Modal: View>: ViewModifier {
                             .padding(RocketSpace.s7)
                             .onExitCommand(perform: dismiss)
                             .accessibilityAddTraits(.isModal)
-                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+                            .rocketTransition(RocketTransition.reveal)
                     }
                 }
-                .animation(isPresented ? RocketMotion.enter : RocketMotion.exit, value: isPresented)
+                .rocketAnimation(isPresented ? RocketMotion.enter : RocketMotion.exit, value: isPresented)
             }
     }
 }
