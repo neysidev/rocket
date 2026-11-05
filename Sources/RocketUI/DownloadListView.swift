@@ -15,9 +15,16 @@ public struct DownloadListView: View {
             if model.visibleItems.isEmpty {
                 EmptyStateView(filter: model.filter, searching: !model.search.isEmpty)
             } else {
-                List(model.visibleItems, selection: $model.selection) { item in
-                    DownloadRow(item: item, model: model)
-                        .listRowInsets(EdgeInsets(top: RocketSpace.s3, leading: RocketSpace.s4, bottom: RocketSpace.s3, trailing: RocketSpace.s4))
+                List(selection: $model.selection) {
+                    ForEach(model.visibleItems) { item in
+                        DownloadRow(item: item, model: model)
+                            .listRowInsets(EdgeInsets(top: RocketSpace.s3, leading: RocketSpace.s4, bottom: RocketSpace.s3, trailing: RocketSpace.s4))
+                            .draggable(item.id.uuidString)
+                    }
+                    // Drag to reorder inside a queue (FR-QUE-03).
+                    .onMove(perform: isQueue ? { source, destination in
+                        Task { await model.moveInCurrentQueue(from: source, to: destination) }
+                    } : nil)
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
@@ -40,7 +47,12 @@ public struct DownloadListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(RocketColor.canvas)
-        .navigationTitle(model.filter.title)
+        .navigationTitle(model.title(for: model.filter))
+    }
+
+    private var isQueue: Bool {
+        if case .queue = model.filter { return true }
+        return false
     }
 
     @ViewBuilder
@@ -56,6 +68,11 @@ public struct DownloadListView: View {
             Button("Open") { ids.forEach(model.open) }
         }
         Button("Show in Finder") { model.reveal(ids) }
+        Menu("Move to Queue") {
+            ForEach(model.queues) { queue in
+                Button(queue.name) { Task { await model.move(Array(ids), toQueue: queue.id) } }
+            }
+        }
         Menu("Speed Limit") {
             SpeedLimitPicker(current: ids.count == 1 ? ids.first.flatMap(model.download)?.speedLimit : nil) { rate in
                 Task { await model.setLimit(ids, bytesPerSecond: rate) }
@@ -102,11 +119,12 @@ struct EmptyStateView: View {
         case .active: return String(localized: "Nothing is downloading")
         case .completed: return String(localized: "No completed downloads")
         case .failed: return String(localized: "No failed downloads")
+        case .queue: return String(localized: "This queue is empty")
         }
     }
 }
 
-/// Status filters with live counts.
+/// Status filters and queues with live counts. Downloads can be dropped on a queue to move them there.
 public struct DownloadSidebar<Footer: View>: View {
     @Bindable var model: DownloadsModel
     let footer: Footer
@@ -119,10 +137,38 @@ public struct DownloadSidebar<Footer: View>: View {
     public var body: some View {
         List(selection: Binding(get: { model.filter }, set: { model.filter = $0 ?? .all })) {
             Section("Status") {
-                ForEach(SidebarFilter.allCases) { filter in
+                ForEach(SidebarFilter.statuses) { filter in
                     Label(filter.title, systemImage: filter.symbol)
                         .badge(model.count(filter))
                         .tag(filter)
+                }
+            }
+            Section {
+                ForEach(model.queues) { queue in
+                    Label(queue.name, systemImage: queue.schedule == nil ? "list.bullet" : "clock")
+                        .badge(model.count(.queue(queue.id)))
+                        .help(queue.schedule?.summary ?? "")
+                        .tag(SidebarFilter.queue(queue.id))
+                        .dropDestination(for: String.self) { ids, _ in
+                            let ids = ids.compactMap(UUID.init(uuidString:))
+                            Task { await model.move(ids, toQueue: queue.id) }
+                            return !ids.isEmpty
+                        }
+                        .contextMenu {
+                            Button("Edit Queue…") { model.editingQueue = queue }
+                            if !queue.isDefault {
+                                Button("Delete Queue") { Task { await model.deleteQueue(queue.id) } }
+                            }
+                        }
+                }
+            } header: {
+                HStack {
+                    Text("Queues")
+                    Spacer()
+                    Button("New Queue", systemImage: "plus") { model.newQueue() }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .help("New queue")
                 }
             }
         }

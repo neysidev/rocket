@@ -35,6 +35,9 @@ struct MainWindow: View {
                 }
             }
         }
+        .sheet(item: $downloads.editingQueue) { queue in
+            QueueEditor(queue: queue) { saved in Task { await downloads.saveQueue(saved) } }
+        }
         .sheet(item: $downloads.adding) { adding in
             AddDownloadsSheet(model: adding) { ids in Task { await downloads.finishAdding(ids) } }
         }

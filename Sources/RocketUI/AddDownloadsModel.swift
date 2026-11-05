@@ -68,6 +68,8 @@ public final class AddDownloadsModel: Identifiable {
     public var text: String
     public var folder: URL
     public var connections: Int
+    public var queueID: String
+    public let queues: [DownloadQueue]
     public private(set) var phase: Phase = .input
     public var candidates: [Candidate] = []
     /// Downloads to select in the list after "Show existing".
@@ -78,12 +80,15 @@ public final class AddDownloadsModel: Identifiable {
     private let fileExists: (URL) -> Bool
 
     public init(
-        text: String = "", folder: URL, connections: Int = 8, agent: (any AgentCommanding)?, existing: [Download],
+        text: String = "", folder: URL, connections: Int = 8, queueID: String = DownloadQueue.defaultID,
+        queues: [DownloadQueue] = [], agent: (any AgentCommanding)?, existing: [Download],
         fileExists: @escaping (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
     ) {
         self.text = text
         self.folder = folder
         self.connections = connections
+        self.queueID = queueID
+        self.queues = queues
         self.agent = agent
         self.existing = existing.filter { $0.state != .cancelled }
         self.fileExists = fileExists
@@ -167,7 +172,7 @@ public final class AddDownloadsModel: Identifiable {
             default:
                 break
             }
-            let command = Command.add(url: candidate.url, directory: folder.path, fileName: candidates[index].fileName, connections: connections)
+            let command = Command.add(url: candidate.url, directory: folder.path, fileName: candidates[index].fileName, connections: connections, queueID: queueID)
             switch try? await agent.send(command) {
             case .download(let download)?: ids.append(download.id)
             case .error(let message)?: candidates[index].error = message

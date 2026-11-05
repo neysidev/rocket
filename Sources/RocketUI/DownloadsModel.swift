@@ -44,10 +44,15 @@ public struct DownloadItem: Identifiable, Equatable, Sendable {
 public enum DownloadEvent: Equatable, Sendable {
     case completed(Download)
     case failed(Download)
+    /// A queue with "Notify me" as its after-action ran dry.
+    case queueFinished(DownloadQueue)
 }
 
-public enum SidebarFilter: String, CaseIterable, Identifiable, Hashable, Sendable {
+public enum SidebarFilter: Identifiable, Hashable, Sendable {
     case all, active, completed, failed
+    case queue(String)
+
+    public static let statuses: [SidebarFilter] = [.all, .active, .completed, .failed]
 
     public var id: Self { self }
 
@@ -57,6 +62,7 @@ public enum SidebarFilter: String, CaseIterable, Identifiable, Hashable, Sendabl
         case .active: String(localized: "Active")
         case .completed: String(localized: "Completed")
         case .failed: String(localized: "Failed")
+        case .queue: String(localized: "Queue")
         }
     }
 
@@ -66,6 +72,7 @@ public enum SidebarFilter: String, CaseIterable, Identifiable, Hashable, Sendabl
         case .active: "arrow.down.circle"
         case .completed: "checkmark.circle"
         case .failed: "exclamationmark.triangle"
+        case .queue: "list.bullet"
         }
     }
 
@@ -75,6 +82,7 @@ public enum SidebarFilter: String, CaseIterable, Identifiable, Hashable, Sendabl
         case .active: download.state.isActive || download.state == .paused
         case .completed: download.state == .completed
         case .failed: download.state == .failed
+        case .queue(let id): download.queueID == id && download.state != .cancelled
         }
     }
 }
@@ -85,6 +93,10 @@ public enum SidebarFilter: String, CaseIterable, Identifiable, Hashable, Sendabl
 public final class DownloadsModel {
     public var agent: (any AgentCommanding)?
     public private(set) var items: [DownloadItem] = []
+    public internal(set) var queues: [DownloadQueue] = []
+    /// Queue being edited (a new one has an unsaved id).
+    public var editingQueue: DownloadQueue?
+    private var polls = 0
     public var filter: SidebarFilter = .all
     public var search = ""
     public var selection: Set<UUID> = []
@@ -106,11 +118,14 @@ public final class DownloadsModel {
     }
 
     public var visibleItems: [DownloadItem] {
-        items.filter { item in
+        let matching = items.filter { item in
             filter.includes(item.download)
                 && (search.isEmpty || item.download.fileName.localizedCaseInsensitiveContains(search)
                     || item.download.url.absoluteString.localizedCaseInsensitiveContains(search))
         }
+        // A queue shows its run order; everything else newest first.
+        if case .queue = filter { return matching.sorted { $0.download.position < $1.download.position } }
+        return matching
     }
 
     public func count(_ filter: SidebarFilter) -> Int {
@@ -149,7 +164,19 @@ public final class DownloadsModel {
 
     public func refresh(now: ContinuousClock.Instant = .now) async {
         guard let agent, case .snapshot(let downloads)? = try? await agent.send(.snapshot) else { return }
+        // Queues change rarely: reload them every 5 s and after queue commands.
+        if polls % 25 == 0 { await refreshQueues() }
+        polls += 1
         apply(downloads, now: now)
+    }
+
+    public func refreshQueues() async {
+        if let agent, case .queues(let queues)? = try? await agent.send(.queues), queues != self.queues { self.queues = queues }
+    }
+
+    public func title(for filter: SidebarFilter) -> String {
+        if case .queue(let id) = filter { return queues.first { $0.id == id }?.name ?? filter.title }
+        return filter.title
     }
 
     func apply(_ downloads: [Download], now: ContinuousClock.Instant) {
@@ -157,6 +184,15 @@ public final class DownloadsModel {
             for download in downloads where lastStates[download.id] != download.state {
                 if download.state == .completed { onEvent?(.completed(download)) }
                 if download.state == .failed { onEvent?(.failed(download)) }
+            }
+        }
+        if let lastStates {
+            // "Notify me" after-action: a queue that had work in flight and now has none.
+            let pending: (Download) -> Bool = { $0.state.isActive }
+            let before = Set(items.map(\.download).filter { lastStates[$0.id].map { $0.isActive } ?? false }.map(\.queueID))
+            let after = Set(downloads.filter(pending).map(\.queueID))
+            for queue in queues where queue.postAction == .notify && before.contains(queue.id) && !after.contains(queue.id) {
+                onEvent?(.queueFinished(queue))
             }
         }
         lastStates = Dictionary(uniqueKeysWithValues: downloads.map { ($0.id, $0.state) })
@@ -192,8 +228,15 @@ public final class DownloadsModel {
         let links = links ?? LinkExtractor.urls(in: NSPasteboard.general.string(forType: .string) ?? "")
         adding = AddDownloadsModel(
             text: links.map(\.absoluteString).joined(separator: "\n"), folder: settings.folder,
-            connections: settings.connections, agent: agent, existing: items.map(\.download)
+            connections: settings.connections, queueID: currentQueueID, queues: queues, agent: agent,
+            existing: items.map(\.download)
         )
+    }
+
+    /// New downloads go to the queue being viewed, else the default queue.
+    private var currentQueueID: String {
+        if case .queue(let id) = filter { return id }
+        return DownloadQueue.defaultID
     }
 
     /// After the sheet: show the new (or existing) downloads.
@@ -242,6 +285,38 @@ public final class DownloadsModel {
     /// FR-SPD-02: per-download limit.
     public func setLimit(_ ids: some Sequence<UUID>, bytesPerSecond: Int64?) async {
         for id in ids { await run(.setLimit(downloadID: id, bytesPerSecond: bytesPerSecond)) }
+    }
+
+    // MARK: Queues
+
+    public func newQueue() {
+        editingQueue = DownloadQueue(name: String(localized: "New Queue"), sortOrder: (queues.map(\.sortOrder).max() ?? 0) + 1)
+    }
+
+    public func saveQueue(_ queue: DownloadQueue) async {
+        await run(.saveQueue(queue))
+        await refreshQueues()
+        filter = .queue(queue.id)
+    }
+
+    public func deleteQueue(_ id: String) async {
+        await run(.deleteQueue(id: id))
+        await refreshQueues()
+        if filter == .queue(id) { filter = .all }
+    }
+
+    /// Moves downloads into a queue, before another download or at the end.
+    public func move(_ ids: [UUID], toQueue queueID: String, before: UUID? = nil) async {
+        await run(.move(ids: ids, toQueue: queueID, before: before))
+    }
+
+    /// Reorders within the current queue after a drag in the list.
+    public func moveInCurrentQueue(from source: IndexSet, to destination: Int) async {
+        guard case .queue(let queueID) = filter else { return }
+        let visible = visibleItems
+        let moving = source.map { visible[$0].id }
+        let before = visible[destination...].first { !moving.contains($0.id) }?.id
+        await move(moving, toQueue: queueID, before: before)
     }
 
     public func pauseAll() async { await pause(items.map(\.id)) }

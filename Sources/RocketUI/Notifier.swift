@@ -72,6 +72,11 @@ public final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             content.body = download.fileName
             if let size = download.totalBytes { content.subtitle = Format.bytes(size) }
             content.categoryIdentifier = Category.completed.rawValue
+        case .queueFinished(let queue):
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Queue finished")
+            content.body = String(localized: "Everything in \(queue.name) is done.")
+            return UNNotificationRequest(identifier: "queue-\(queue.id)", content: content, trigger: nil)
         case .failed(let failed):
             download = failed
             content.title = String(localized: "Download failed")

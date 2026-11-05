@@ -83,6 +83,11 @@ import Testing
             done.completedAt = Date.now.addingTimeInterval(-hoursAgo * 3600)
             history.append(done)
         }
+        model.queues = [
+            DownloadQueue(id: "default", name: "Default"),
+            DownloadQueue(id: "night", name: "Night", schedule: QueueSchedule(start: 60, stop: 420), postAction: .sleep),
+        ]
+        history[2].queueID = "night"
         model.apply(history, now: .now)
         model.apply(history.map { var d = $0; if d.state == .downloading { d.receivedBytes += 84_000_000 }; return d }, now: .now + .seconds(1))
         let view = MenuBarPanel(model: model) {}

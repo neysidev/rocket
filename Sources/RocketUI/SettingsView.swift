@@ -15,6 +15,7 @@ public final class AppSettings {
     public var notificationsEnabled: Bool { didSet { defaults.notificationsEnabled = notificationsEnabled } }
     /// Mirror of the agent's global limit; the agent persists it when the app sets it over XPC.
     public var globalSpeedLimit: Int64?
+    public var sleepPrevention: SleepPrevention { didSet { defaults.sleepPrevention = sleepPrevention } }
     public private(set) var launchAtLogin = false
     public private(set) var launchAtLoginError: String?
 
@@ -24,6 +25,7 @@ public final class AppSettings {
         connections = defaults.connections
         notificationsEnabled = defaults.notificationsEnabled
         globalSpeedLimit = defaults.globalSpeedLimit
+        sleepPrevention = defaults.sleepPrevention
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
@@ -63,6 +65,11 @@ public struct SettingsView: View {
                 Text("More connections are faster on servers that allow them. Rocket lowers the count automatically when a server pushes back.")
                     .font(.rocketCaption)
                     .foregroundStyle(RocketColor.textSecondary)
+            }
+            Section("Power") {
+                Picker("Keep the Mac awake while downloading", selection: $settings.sleepPrevention) {
+                    ForEach(SleepPrevention.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
             }
             Section("Notifications") {
                 Toggle("Notify when downloads finish or fail", isOn: $settings.notificationsEnabled)

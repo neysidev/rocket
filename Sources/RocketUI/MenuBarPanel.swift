@@ -24,7 +24,9 @@ public struct MenuBarPanel: View {
                 StatCard(label: "Queued", value: "\(model.queuedCount)")
             }
             ThroughputCard(buckets: model.hourlyThroughput())
-            LiveList(items: liveItems, model: model, openMainWindow: openMainWindow)
+            ForEach(liveGroups, id: \.queue.id) { group in
+                LiveList(queue: group.queue, items: group.items, model: model, openMainWindow: openMainWindow)
+            }
             filterField
         }
         .padding(RocketSpace.s3)
@@ -87,6 +89,16 @@ public struct MenuBarPanel: View {
         if items.isEmpty { items = Array(model.items.filter { $0.download.state == .completed }.prefix(3)) }
         guard !filter.isEmpty else { return items }
         return items.filter { $0.download.fileName.localizedCaseInsensitiveContains(filter) }
+    }
+
+    /// Live items grouped by queue (queues with nothing live are hidden; the default queue always shows).
+    private var liveGroups: [(queue: DownloadQueue, items: [DownloadItem])] {
+        let items = liveItems
+        let queues = model.queues.isEmpty ? [DownloadQueue(id: DownloadQueue.defaultID, name: String(localized: "Default"))] : model.queues
+        return queues.compactMap { queue in
+            let members = items.filter { $0.download.queueID == queue.id }
+            return members.isEmpty && !queue.isDefault ? nil : (queue, members)
+        }
     }
 
     private var filterField: some View {
@@ -231,6 +243,7 @@ struct ThroughputCard: View {
 
 /// Downloads grouped under their queue (only the default queue exists until v0.2), with compact rows.
 struct LiveList: View {
+    let queue: DownloadQueue
     let items: [DownloadItem]
     let model: DownloadsModel
     let openMainWindow: () -> Void
@@ -238,12 +251,12 @@ struct LiveList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: RocketSpace.s3) {
-                Image(systemName: "list.bullet")
+                Image(systemName: queue.schedule == nil ? "list.bullet" : "clock")
                     .frame(width: RocketSize.fileTile, height: RocketSize.fileTile)
                     .background(RocketColor.control, in: RoundedRectangle(cornerRadius: RocketRadius.small))
                     .foregroundStyle(RocketColor.textSecondary)
-                Text("Default").font(.rocketHeadline).foregroundStyle(RocketColor.textPrimary)
-                Text(model.settings.folder.path(percentEncoded: false).replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                Text(queue.name).font(.rocketHeadline).foregroundStyle(RocketColor.textPrimary)
+                Text(queue.schedule?.summary ?? model.settings.folder.path(percentEncoded: false).replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                     .font(.rocketMono)
                     .foregroundStyle(RocketColor.textSecondary)
                     .lineLimit(1)

@@ -28,6 +28,14 @@ public struct AddDownloadsSheet: View {
 
             HStack {
                 folderPicker
+                if model.queues.count > 1 {
+                    Picker("Queue", selection: $model.queueID) {
+                        ForEach(model.queues) { Text($0.name).tag($0.id) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Queue")
+                }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)

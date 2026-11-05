@@ -67,7 +67,7 @@ private func download(_ name: String, _ state: DownloadState, received: Int64 = 
 
         await model.toggle([running.id])
         await model.toggle([paused.id])
-        let sent = await agent.sent.filter { $0 != .snapshot }
+        let sent = await agent.sent.filter { $0 != .snapshot && $0 != .queues }
         #expect(sent == [.pause(id: running.id), .resume(id: paused.id)])
     }
 
@@ -161,5 +161,41 @@ private func download(_ name: String, _ state: DownloadState, received: Int64 = 
         let model = DownloadsModel()
         for _ in 0..<20 { model.apply([], now: .now) }
         #expect(model.speedHistory.count == 16)
+    }
+}
+
+@MainActor
+@Suite struct QueueUITests {
+    func download(_ name: String, queue: String, state: DownloadState, position: Double) -> Download {
+        var download = Download(url: URL(string: "https://example.com/\(name)")!, destinationPath: "/tmp", fileName: name, state: state)
+        download.queueID = queue
+        download.position = position
+        return download
+    }
+
+    @Test func queueFilterShowsRunOrder() {
+        let model = DownloadsModel()
+        model.apply([
+            download("b", queue: "night", state: .queued, position: 2), download("a", queue: "night", state: .queued, position: 1),
+            download("x", queue: "default", state: .queued, position: 0),
+        ], now: .now)
+        model.filter = .queue("night")
+        #expect(model.visibleItems.map(\.download.fileName) == ["a", "b"])
+        #expect(model.count(.queue("night")) == 2)
+    }
+
+    @Test func dragReorderSendsMoveBeforeTheRightNeighbour() async {
+        let agent = FakeAgent()
+        let items = [
+            download("a", queue: "night", state: .queued, position: 1), download("b", queue: "night", state: .queued, position: 2),
+            download("c", queue: "night", state: .queued, position: 3),
+        ]
+        await agent.set(items)
+        let model = DownloadsModel(agent: agent)
+        await model.refresh()
+        model.filter = .queue("night")
+        await model.moveInCurrentQueue(from: [2], to: 0) // c to the top
+        let moves = await agent.sent.filter { if case .move = $0 { true } else { false } }
+        #expect(moves == [.move(ids: [items[2].id], toQueue: "night", before: items[0].id)])
     }
 }

@@ -77,7 +77,7 @@ actor ProbingAgent: AgentCommanding {
         #expect(model.conflict(for: model.candidates[0]) == .fileExists)
         #expect(model.candidates[0].resolution == .keepBoth)
         _ = await model.start()
-        #expect(await agent.added == [.add(url: URL(string: "https://example.com/ubuntu.iso")!, directory: folder.path, fileName: "ubuntu 3.iso", connections: 8)])
+        #expect(await agent.added == [.add(url: URL(string: "https://example.com/ubuntu.iso")!, directory: folder.path, fileName: "ubuntu 3.iso", connections: 8, queueID: "default")])
     }
 
     @Test func skippedLinksAreNotAdded() async {
