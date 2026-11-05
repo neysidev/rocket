@@ -53,6 +53,13 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: io.github.neysidev.rocket.add
             CFBundleURLSchemes: [rocket]
+        # Services menu "Download with Rocket" (FR-INT-05); NSRequiredContext makes it on by default.
+        NSServices:
+          - NSMenuItem: { default: Download with Rocket }
+            NSMessage: downloadWithRocket
+            NSPortName: Rocket Downloader
+            NSSendTypes: [public.utf8-plain-text, public.url]
+            NSRequiredContext: {}
     settings:
       base:
         PRODUCT_NAME: Rocket Downloader

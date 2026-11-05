@@ -47,10 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let updater = Updater()
     private var notifier: Notifier?
     private var watcher: ClipboardWatcher?
+    private let services = ServicesProvider()
     private let dock = DockProgress()
     private var polling: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.servicesProvider = services
         let settings = downloads.settings
         let notifier = Notifier(downloads: downloads, isEnabled: { settings.notificationsEnabled })
         self.notifier = notifier
