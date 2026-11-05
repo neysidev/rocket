@@ -1,3 +1,4 @@
+import Foundation
 import RocketCore
 import RocketEngine
 import RocketIPC
@@ -33,13 +34,33 @@ struct AgentPeerHandler: XPCPeerHandler {
     private func handle(_ command: Command) async -> Reply {
         do {
             switch command {
+            case let .add(url, directory, fileName, connections):
+                let folder = directory.map { URL(filePath: ($0 as NSString).expandingTildeInPath, directoryHint: .isDirectory) }
+                    ?? URL.downloadsDirectory
+                return .download(try await scheduler.add(url: url, folder: folder, fileName: fileName, connections: connections ?? 8))
+            case .pause(let id):
+                try await scheduler.pause(id: id)
+                return .ok
+            case .resume(let id):
+                try await scheduler.resume(id: id)
+                return .ok
+            case .cancel(let id):
+                try await scheduler.cancel(id: id)
+                return .ok
             case .snapshot:
                 return .snapshot(try await scheduler.snapshot())
-            case .add, .pause, .resume, .cancel:
-                return .error("Not implemented yet")
             }
         } catch {
-            return .error(error.localizedDescription)
+            return .error(Self.describe(error))
+        }
+    }
+
+    private static func describe(_ error: any Error) -> String {
+        switch error {
+        case DownloadError.http(let status): "Server responded \(status) \(HTTPURLResponse.localizedString(forStatusCode: status))"
+        case DownloadError.invalidURL: "Only http and https URLs are supported"
+        case SchedulerError.notFound(let id): "No download with id \(id)"
+        default: error.localizedDescription
         }
     }
 }

@@ -14,32 +14,37 @@ public struct GRDBDownloadRepository: DownloadRepository, CheckpointStore {
         self.db = db
     }
 
+    // Synchronous GRDB calls on purpose: the scheduler records pause/cancel from tasks that were just
+    // cancelled, and GRDB's async accessors refuse to start in a cancelled task. Each call touches a few rows.
+
     public func all() async throws -> [Download] {
-        try await db.writer.read { try Download.order(Column("createdAt").desc).fetchAll($0) }
+        try read { try Download.order(Column("createdAt").desc).fetchAll($0) }
     }
 
     public func download(id: UUID) async throws -> Download? {
-        try await db.writer.read { try Download.fetchOne($0, id: id) }
+        try read { try Download.fetchOne($0, id: id) }
     }
 
     public func save(_ download: Download) async throws {
-        try await db.writer.write { try download.save($0) }
+        try write { try download.save($0) }
     }
 
     public func delete(id: UUID) async throws {
-        _ = try await db.writer.write { try Download.deleteOne($0, id: id) }
+        try write { _ = try Download.deleteOne($0, id: id) }
+    }
+
+    private func read<T>(_ body: (Database) throws -> T) throws -> T {
+        try db.writer.read(body)
+    }
+
+    private func write(_ body: (Database) throws -> Void) throws {
+        try db.writer.write(body)
     }
 
     // MARK: CheckpointStore
 
-    /// Synchronous on purpose: the final checkpoint runs while the download task is being cancelled,
-    /// and GRDB's async accessors refuse to start in a cancelled task. The write is a few rows.
     public func saveCheckpoint(downloadID: UUID, segments: [Segment]) async throws {
-        try writeCheckpoint(downloadID: downloadID, segments: segments)
-    }
-
-    private func writeCheckpoint(downloadID: UUID, segments: [Segment]) throws {
-        try db.writer.write { db in
+        try write { db in
             try SegmentRecord.filter(Column("downloadId") == downloadID).deleteAll(db)
             for segment in segments {
                 try SegmentRecord(downloadId: downloadID, segment: segment).insert(db)
@@ -51,7 +56,7 @@ public struct GRDBDownloadRepository: DownloadRepository, CheckpointStore {
     }
 
     public func segments(downloadID: UUID) async throws -> [Segment] {
-        try await db.writer.read { db in
+        try read { db in
             try SegmentRecord.filter(Column("downloadId") == downloadID).order(Column("id")).fetchAll(db).map(\.segment)
         }
     }

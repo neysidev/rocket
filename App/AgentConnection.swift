@@ -20,6 +20,11 @@ final class AgentConnection {
     func connect() async {
         status = .connecting
         do {
+            #if DEBUG
+            // Ad-hoc Debug builds change the agent's code signature on every build. run-app.sh boots the stale
+            // job out of launchd; registering again here loads the new binary with a fresh launch constraint.
+            if service.status == .enabled { try await service.unregister() }
+            #endif
             if service.status != .enabled { try service.register() }
         } catch {
             status = service.status == .requiresApproval ? .needsApproval : .unavailable(error.localizedDescription)
@@ -38,6 +43,7 @@ final class AgentConnection {
                 status = .live
             }
         } catch {
+            client = nil // a timed-out client's session is cancelled
             status = .unavailable(error.localizedDescription)
         }
     }

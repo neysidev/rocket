@@ -11,7 +11,15 @@ Requires macOS 14+, Xcode 26+ and [XcodeGen](https://github.com/yonaskolb/XcodeG
 ```sh
 ./Scripts/run-app.sh   # generate Rocket.xcodeproj, build, open the app
 swift test             # run module tests
-".build/xcode/Build/Products/Debug/Rocket Downloader.app/Contents/Helpers/rocket" list
+swift run rocket-test-server   # local test server for manual downloads
+```
+
+The `rocket` CLI ships inside the app at `Contents/Helpers/rocket`:
+
+```sh
+rocket add <url> [--dir ~/Downloads] [--name f.iso] [--connections 8] [--wait]
+rocket list [--json]
+rocket pause|resume|cancel <id-prefix>
 ```
 
 `Rocket.xcodeproj` is generated from `project.yml`; don't edit it by hand. On first launch macOS may ask you

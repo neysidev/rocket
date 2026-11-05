@@ -26,7 +26,8 @@ public struct Envelope<Payload: Codable & Sendable>: Codable, Sendable {
 }
 
 public enum Command: Codable, Sendable, Hashable {
-    case add(url: URL, directory: String?)
+    /// `directory` defaults to ~/Downloads; `fileName` to what the server suggests.
+    case add(url: URL, directory: String?, fileName: String? = nil, connections: Int? = nil)
     case pause(id: UUID)
     case resume(id: UUID)
     case cancel(id: UUID)
@@ -35,6 +36,7 @@ public enum Command: Codable, Sendable, Hashable {
 
 public enum Reply: Codable, Sendable {
     case ok
+    case download(Download)
     case snapshot([Download])
     case error(String)
 }

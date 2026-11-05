@@ -38,6 +38,7 @@ public enum DownloadFinalizer {
     static func markDownloaded(_ url: URL, from source: URL, at date: Date) {
         let quarantine = String(format: "0081;%08x;Rocket Downloader;", Int(date.timeIntervalSince1970))
         setAttribute("com.apple.quarantine", Data(quarantine.utf8), on: url)
+        removexattr(url.path, PartFile.downloadIDAttribute, 0)
         if let whereFroms = try? PropertyListSerialization.data(fromPropertyList: [source.absoluteString], format: .binary, options: 0) {
             setAttribute("com.apple.metadata:kMDItemWhereFroms", whereFroms, on: url)
         }

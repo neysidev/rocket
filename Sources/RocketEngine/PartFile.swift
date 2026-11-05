@@ -49,10 +49,12 @@ public final class PartFile: @unchecked Sendable {
         return Int64(status.st_size)
     }
 
+    public static let downloadIDAttribute = "io.github.neysidev.rocket.download-id"
+
     /// Records which download owns this part file, so leftovers can be matched after a crash.
     public func tag(downloadID: UUID) {
         let id = downloadID.uuidString
-        _ = fsetxattr(descriptor, "io.github.neysidev.rocket.download-id", id, id.utf8.count, 0, 0)
+        _ = fsetxattr(descriptor, Self.downloadIDAttribute, id, id.utf8.count, 0, 0)
     }
 
     /// Sets the final length (used when the size was unknown up front).

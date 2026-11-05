@@ -103,6 +103,8 @@ targets:
         SKIP_INSTALL: YES
     dependencies:
       - package: Rocket
+        product: RocketCore
+      - package: Rocket
         product: RocketIPC
       - package: ArgumentParser
         product: ArgumentParser
