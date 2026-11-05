@@ -20,6 +20,8 @@ public struct Download: Codable, Sendable, Identifiable, Hashable {
     public var lastModified: String?
 
     public var receivedBytes: Int64
+    /// Per-download cap in bytes per second (FR-SPD-02); nil = only the global limit applies.
+    public var speedLimit: Int64?
     /// Why the download failed, or why it was restarted (e.g. `.remoteFileChanged`).
     public var failure: DownloadError?
 

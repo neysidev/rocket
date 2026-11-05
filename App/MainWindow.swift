@@ -17,6 +17,16 @@ struct MainWindow: View {
         .toolbar {
             ToolbarItem { Button("Add", systemImage: "plus") { downloads.beginAdding() }.help("Add downloads (⌘N)") }
             ToolbarItem {
+                Menu {
+                    SpeedLimitPicker("Limit All Downloads", current: downloads.settings.globalSpeedLimit) { rate in
+                        Task { await downloads.setGlobalLimit(rate) }
+                    }
+                } label: {
+                    Label("Speed Limit", systemImage: "gauge.with.dots.needle.33percent")
+                }
+                .help(downloads.settings.globalSpeedLimit.map { "Limited to \(Format.speed(Double($0)))" } ?? "No speed limit")
+            }
+            ToolbarItem {
                 if downloads.hasRunning || !downloads.hasPaused {
                     Button("Pause All", systemImage: "pause") { Task { await downloads.pauseAll() } }
                         .disabled(!downloads.hasRunning)

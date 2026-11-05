@@ -27,12 +27,14 @@ public struct Envelope<Payload: Codable & Sendable>: Codable, Sendable {
 
 public enum Command: Codable, Sendable, Hashable {
     /// `directory` defaults to ~/Downloads; `fileName` to what the server suggests.
-    case add(url: URL, directory: String?, fileName: String? = nil, connections: Int? = nil)
+    case add(url: URL, directory: String?, fileName: String? = nil, connections: Int? = nil, speedLimit: Int64? = nil)
     case pause(id: UUID)
     case resume(id: UUID)
     case cancel(id: UUID)
     case remove(id: UUID, deleteFile: Bool)
     case snapshot
+    /// Bytes per second, nil = unlimited. `downloadID` nil sets the global limit.
+    case setLimit(downloadID: UUID?, bytesPerSecond: Int64?)
     /// Looks up name, size and range support without adding anything (FR-ADD-02).
     case probe(url: URL)
 }

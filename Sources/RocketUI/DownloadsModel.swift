@@ -233,6 +233,17 @@ public final class DownloadsModel {
         for id in ids { await run(.remove(id: id, deleteFile: deleteFiles)) }
     }
 
+    /// FR-SPD-01: applies live to every running connection.
+    public func setGlobalLimit(_ bytesPerSecond: Int64?) async {
+        settings.globalSpeedLimit = bytesPerSecond
+        await run(.setLimit(downloadID: nil, bytesPerSecond: bytesPerSecond))
+    }
+
+    /// FR-SPD-02: per-download limit.
+    public func setLimit(_ ids: some Sequence<UUID>, bytesPerSecond: Int64?) async {
+        for id in ids { await run(.setLimit(downloadID: id, bytesPerSecond: bytesPerSecond)) }
+    }
+
     public func pauseAll() async { await pause(items.map(\.id)) }
     public func resumeAll() async { await resume(items.filter { $0.download.state == .paused }.map(\.id)) }
 

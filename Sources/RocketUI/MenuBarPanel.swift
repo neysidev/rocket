@@ -62,8 +62,22 @@ public struct MenuBarPanel: View {
 
     private var speedCard: some View {
         let (value, unit) = Format.compactSpeed(model.totalSpeed)
+        let limit = model.settings.globalSpeedLimit
         return StatCard(label: "Speed", value: value, unit: unit) {
-            Sparkline(values: model.speedHistory)
+            // FR-SPD-01: the global limit, changeable live from the menu bar.
+            Menu {
+                SpeedLimitPicker("Limit All Downloads", current: limit) { rate in Task { await model.setGlobalLimit(rate) } }
+            } label: {
+                if let limit {
+                    Text("≤ \(Format.speed(Double(limit)))").font(.rocketLabel).foregroundStyle(RocketColor.textSecondary)
+                } else {
+                    Sparkline(values: model.speedHistory)
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Speed limit")
         }
     }
 

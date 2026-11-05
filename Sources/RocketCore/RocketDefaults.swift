@@ -10,6 +10,7 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
         static let folder = "defaultFolderPath"
         static let connections = "defaultConnections"
         static let notifications = "notificationsEnabled"
+        static let globalSpeedLimit = "globalSpeedLimit"
     }
 
     private let store: UserDefaults
@@ -31,6 +32,12 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
             return value == 0 ? 8 : min(max(value, Self.connectionRange.lowerBound), Self.connectionRange.upperBound)
         }
         nonmutating set { store.set(newValue, forKey: Key.connections) }
+    }
+
+    /// Bytes per second for all downloads together; nil = unlimited (FR-SPD-01).
+    public var globalSpeedLimit: Int64? {
+        get { (store.object(forKey: Key.globalSpeedLimit) as? NSNumber).map(\.int64Value).flatMap { $0 > 0 ? $0 : nil } }
+        nonmutating set { store.set(newValue.map(NSNumber.init(value:)), forKey: Key.globalSpeedLimit) }
     }
 
     public var notificationsEnabled: Bool {

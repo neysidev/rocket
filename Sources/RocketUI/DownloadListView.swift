@@ -56,6 +56,11 @@ public struct DownloadListView: View {
             Button("Open") { ids.forEach(model.open) }
         }
         Button("Show in Finder") { model.reveal(ids) }
+        Menu("Speed Limit") {
+            SpeedLimitPicker(current: ids.count == 1 ? ids.first.flatMap(model.download)?.speedLimit : nil) { rate in
+                Task { await model.setLimit(ids, bytesPerSecond: rate) }
+            }
+        }
         Divider()
         if states.contains(where: { $0.isActive || $0 == .paused }) {
             Button("Cancel Download") { Task { await model.cancel(ids) } }

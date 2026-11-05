@@ -50,6 +50,7 @@ public enum Format {
             var parts = [progress]
             if item.speed > 0 { parts.append(speed(item.speed)) }
             if let left = item.secondsLeft { parts.append(timeLeft(left)) }
+            if let limit = download.speedLimit { parts.append(String(localized: "limit \(speed(Double(limit)))")) }
             return parts.joined(separator: " · ")
         case .queued, .probing: return size ?? String(localized: "Size unknown")
         case .paused, .verifying: return progress

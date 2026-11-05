@@ -15,6 +15,8 @@ public actor DownloadCoordinator {
     private let checkpointInterval: Duration
     private let onCheckpoint: (@Sendable ([Segment]) async throws -> Void)?
     private let retry: RetryPolicy
+    /// Every limiter that covers this download (global, per-download); each chunk takes tokens from all.
+    private let limiters: [BandwidthLimiter]
 
     public private(set) var segments: [Segment]
     private var active: Set<Int> = []
@@ -25,10 +27,12 @@ public actor DownloadCoordinator {
         url: URL, info: RemoteFileInfo, file: PartFile, segments: [Segment] = [],
         connections: Int, transport: any HTTPTransport, planner: SegmentPlanner = SegmentPlanner(),
         retry: RetryPolicy = RetryPolicy(),
+        limiters: [BandwidthLimiter] = [],
         checkpointInterval: Duration = .seconds(2),
         onCheckpoint: (@Sendable ([Segment]) async throws -> Void)? = nil
     ) {
         self.retry = retry
+        self.limiters = limiters
         connectionLimit = max(1, connections)
         self.checkpointInterval = checkpointInterval
         self.onCheckpoint = onCheckpoint
@@ -180,6 +184,7 @@ public actor DownloadCoordinator {
             try Task.checkCancellation()
             let count = Int(min(Int64(chunk.count), end - offset + 1))
             guard count > 0 else { return }
+            for limiter in limiters { try await limiter.acquire(count) }
             // ponytail: pwrite on the cooperative pool; move to a dedicated I/O executor if profiling shows stalls.
             try file.write(count == chunk.count ? chunk : chunk.prefix(count), at: offset)
             offset += Int64(count)

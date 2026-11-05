@@ -28,7 +28,8 @@ actor MemoryRepository: DownloadRepository, CheckpointStore {
         scheduler = DownloadScheduler(
             repository: repository, checkpoints: repository, transport: URLSessionHTTPTransport(),
             retry: RetryPolicy(baseDelay: .milliseconds(5), maxDelay: .milliseconds(20)),
-            checkpointInterval: .milliseconds(50)
+            checkpointInterval: .milliseconds(50),
+            defaults: RocketDefaults(store: UserDefaults(suiteName: "SchedulerTests-\(UUID().uuidString)")!)
         )
     }
 

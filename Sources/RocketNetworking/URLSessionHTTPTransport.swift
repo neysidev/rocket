@@ -86,15 +86,12 @@ extension RemoteFileInfo {
 private final class DataTaskDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let requestedRange: ByteRange?
     private var headers: CheckedContinuation<TransferResponse, any Error>?
-    private let stream: AsyncThrowingStream<Data, any Error>
-    private let body: AsyncThrowingStream<Data, any Error>.Continuation
+    /// Bounded: above 4 MiB unread the task is suspended, so slow disks and speed limits slow the network too.
+    private let body = HTTPBody()
 
     init(requestedRange: ByteRange?, continuation: CheckedContinuation<TransferResponse, any Error>) {
         self.requestedRange = requestedRange
         headers = continuation
-        // ponytail: unbounded buffer; a disk slower than the network grows memory. Add backpressure
-        // (suspend the task above 4 MiB buffered) when the engine measures it.
-        (stream, body) = AsyncThrowingStream.makeStream()
     }
 
     func urlSession(
@@ -122,12 +119,16 @@ private final class DataTaskDelegate: NSObject, URLSessionDataDelegate, @uncheck
         } else {
             bodyStart = 0
         }
-        body.onTermination = { [weak dataTask] _ in dataTask?.cancel() }
+        body.setControl(HTTPBody.Control(
+            pause: { [weak dataTask] in dataTask?.suspend() },
+            resume: { [weak dataTask] in dataTask?.resume() },
+            cancel: { [weak dataTask] in dataTask?.cancel() }
+        ))
         headers?.resume(returning: TransferResponse(
             statusCode: http.statusCode,
             info: RemoteFileInfo(http, fallbackURL: dataTask.originalRequest?.url ?? http.url!),
             bodyStart: bodyStart,
-            body: stream
+            body: body
         ))
         headers = nil
         completionHandler(.allow)
@@ -138,7 +139,7 @@ private final class DataTaskDelegate: NSObject, URLSessionDataDelegate, @uncheck
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
-        guard let error else { return body.finish() }
+        guard let error else { return body.finish(throwing: nil) }
         fail(Self.map(error))
     }
 

@@ -15,13 +15,19 @@ public actor DownloadScheduler {
     /// Running downloads. The scheduler owns these tasks and cancels them on pause, cancel and shutdown.
     private var running: [UUID: Task<Void, Never>] = [:]
     private var coordinators: [UUID: DownloadCoordinator] = [:]
+    private let globalLimiter: BandwidthLimiter
+    private var downloadLimiters: [UUID: BandwidthLimiter] = [:]
+    private let defaults: RocketDefaults
     /// Why a running task is being stopped, so its cancellation lands in the right state.
     private var stopping: [UUID: DownloadState] = [:]
 
     public init(
         repository: any DownloadRepository, checkpoints: any CheckpointStore, transport: any HTTPTransport,
-        maxActive: Int = 3, retry: RetryPolicy = RetryPolicy(), checkpointInterval: Duration = .seconds(2)
+        maxActive: Int = 3, retry: RetryPolicy = RetryPolicy(), checkpointInterval: Duration = .seconds(2),
+        defaults: RocketDefaults = RocketDefaults()
     ) {
+        self.defaults = defaults
+        globalLimiter = BandwidthLimiter(bytesPerSecond: defaults.globalSpeedLimit)
         self.repository = repository
         self.checkpoints = checkpoints
         self.transport = transport
@@ -48,12 +54,13 @@ public actor DownloadScheduler {
     }
 
     /// Probes the URL (FR-ADD-02), stores the download and queues it.
-    public func add(url: URL, folder: URL, fileName: String? = nil, connections: Int = 8) async throws -> Download {
+    public func add(url: URL, folder: URL, fileName: String? = nil, connections: Int = 8, speedLimit: Int64? = nil) async throws -> Download {
         guard ["http", "https"].contains(url.scheme?.lowercased()) else { throw DownloadError.invalidURL }
         let info = try await transport.probe(url)
         let name = FileNameSanitizer.sanitize(fileName ?? info.suggestedFileName ?? url.lastPathComponent)
         var download = Download(url: url, destinationPath: folder.path, fileName: name, connections: min(16, max(1, connections)))
         download.remoteInfo = info
+        download.speedLimit = speedLimit
         try await repository.save(download)
         log.info("Queued \(download.id, privacy: .public)")
         try await fill()
@@ -113,6 +120,22 @@ public actor DownloadScheduler {
         try await repository.delete(id: id)
     }
 
+    /// Changes a limit live. `id` nil = global limit, which is also remembered across restarts.
+    public func setLimit(id: UUID?, bytesPerSecond: Int64?) async throws {
+        guard let id else {
+            defaults.globalSpeedLimit = bytesPerSecond
+            return await globalLimiter.setRate(bytesPerSecond)
+        }
+        var download = try await existing(id)
+        download.speedLimit = bytesPerSecond
+        try await repository.save(download)
+        await downloadLimiters[id]?.setRate(bytesPerSecond)
+    }
+
+    public var globalLimit: Int64? {
+        get async { await globalLimiter.bytesPerSecond }
+    }
+
     /// Downloads with live progress for running ones.
     public func snapshot() async throws -> [Download] {
         var downloads = try await repository.all()
@@ -157,6 +180,7 @@ public actor DownloadScheduler {
         }
         running[id] = nil
         coordinators[id] = nil
+        downloadLimiters[id] = nil
         stopping[id] = nil
         do { try await fill() } catch { log.error("Queue refill failed: \(error.localizedDescription, privacy: .public)") }
     }
@@ -170,10 +194,12 @@ public actor DownloadScheduler {
         let file = try PartFile(url: download.partFileURL, size: download.totalBytes)
         file.tag(downloadID: id)
         let checkpoints = checkpoints
+        let limiter = BandwidthLimiter(bytesPerSecond: download.speedLimit)
+        downloadLimiters[id] = limiter
         let coordinator = DownloadCoordinator(
             url: download.finalURL ?? download.url, info: download.remoteInfo, file: file,
             segments: try await checkpoints.segments(downloadID: id), connections: download.connections,
-            transport: transport, retry: retry, checkpointInterval: checkpointInterval,
+            transport: transport, retry: retry, limiters: [globalLimiter, limiter], checkpointInterval: checkpointInterval,
             onCheckpoint: { try await checkpoints.saveCheckpoint(downloadID: id, segments: $0) }
         )
         coordinators[id] = coordinator

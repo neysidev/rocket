@@ -53,10 +53,10 @@ public struct TransferResponse: Sendable {
     public var info: RemoteFileInfo
     /// First byte offset of the body: the `Content-Range` start for `206`, else 0.
     public var bodyStart: Int64
-    /// Cancelling iteration (or dropping the stream) cancels the request.
-    public var body: AsyncThrowingStream<Data, any Error>
+    /// Cancelling iteration (or dropping the body) cancels the request.
+    public var body: HTTPBody
 
-    public init(statusCode: Int, info: RemoteFileInfo, bodyStart: Int64, body: AsyncThrowingStream<Data, any Error>) {
+    public init(statusCode: Int, info: RemoteFileInfo, bodyStart: Int64, body: HTTPBody) {
         self.statusCode = statusCode
         self.info = info
         self.bodyStart = bodyStart

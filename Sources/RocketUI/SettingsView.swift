@@ -13,6 +13,8 @@ public final class AppSettings {
     public var folder: URL { didSet { defaults.folder = folder } }
     public var connections: Int { didSet { defaults.connections = connections } }
     public var notificationsEnabled: Bool { didSet { defaults.notificationsEnabled = notificationsEnabled } }
+    /// Mirror of the agent's global limit; the agent persists it when the app sets it over XPC.
+    public var globalSpeedLimit: Int64?
     public private(set) var launchAtLogin = false
     public private(set) var launchAtLoginError: String?
 
@@ -21,6 +23,7 @@ public final class AppSettings {
         folder = defaults.folder
         connections = defaults.connections
         notificationsEnabled = defaults.notificationsEnabled
+        globalSpeedLimit = defaults.globalSpeedLimit
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

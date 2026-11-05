@@ -34,13 +34,14 @@ struct AgentPeerHandler: XPCPeerHandler {
     private func handle(_ command: Command) async -> Reply {
         do {
             switch command {
-            case let .add(url, directory, fileName, connections):
+            case let .add(url, directory, fileName, connections, speedLimit):
                 // Unset options follow the app's settings.
                 let defaults = RocketDefaults()
                 let folder = directory.map { URL(filePath: ($0 as NSString).expandingTildeInPath, directoryHint: .isDirectory) }
                     ?? defaults.folder
                 return .download(try await scheduler.add(
-                    url: url, folder: folder, fileName: fileName, connections: connections ?? defaults.connections
+                    url: url, folder: folder, fileName: fileName, connections: connections ?? defaults.connections,
+                    speedLimit: speedLimit
                 ))
             case .pause(let id):
                 try await scheduler.pause(id: id)
@@ -53,6 +54,9 @@ struct AgentPeerHandler: XPCPeerHandler {
                 return .ok
             case let .remove(id, deleteFile):
                 try await scheduler.remove(id: id, deleteFile: deleteFile)
+                return .ok
+            case let .setLimit(id, bytesPerSecond):
+                try await scheduler.setLimit(id: id, bytesPerSecond: bytesPerSecond)
                 return .ok
             case .probe(let url):
                 return .info(try await scheduler.probe(url))

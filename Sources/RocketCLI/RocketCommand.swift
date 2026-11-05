@@ -10,7 +10,7 @@ struct RocketCommand: AsyncParsableCommand {
         commandName: "rocket",
         abstract: "Fast, resumable downloads from the terminal.",
         version: "API \(RocketAPI.version.major).\(RocketAPI.version.minor)",
-        subcommands: [Add.self, Info.self, List.self, Pause.self, Resume.self, Cancel.self]
+        subcommands: [Add.self, Info.self, List.self, Limit.self, Pause.self, Resume.self, Cancel.self]
     )
 
     /// Same as ArgumentParser's default, but usage errors exit 2 (TRD) instead of 64.
@@ -41,17 +41,22 @@ struct Add: AsyncParsableCommand {
     @Option(help: "Destination folder (default: ~/Downloads).") var dir: String?
     @Option(help: "File name (default: the server's).") var name: String?
     @Option(help: "Parallel connections, 1–16.") var connections: Int?
+    @Option(help: "Speed limit for this download, e.g. 2M or 500K (bytes per second).") var limit: String?
     @Flag(help: "Wait until the download finishes; exit 1 if it fails.") var wait = false
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
         guard URL(string: url)?.scheme != nil else { throw ValidationError("Not a URL: \(url)") }
         if let connections, !(1...16).contains(connections) { throw ValidationError("--connections must be 1–16") }
+        if let limit, ByteRate.parse(limit) == nil { throw ValidationError("Not a speed: \(limit). Try 2M or 500K.") }
     }
 
     func run() async throws {
         let directory = dir.map { URL(filePath: $0, relativeTo: .currentDirectory()).path }
-        let reply = try await Agent.send(.add(url: URL(string: url)!, directory: directory, fileName: name, connections: connections))
+        let reply = try await Agent.send(.add(
+            url: URL(string: url)!, directory: directory, fileName: name, connections: connections,
+            speedLimit: limit.flatMap(ByteRate.parse)
+        ))
         guard case .download(let download) = reply else { throw Agent.unexpected(reply) }
         guard wait else { return Output.print(download, json: json) }
         let finished = try await Agent.waitForEnd(of: download.id)
@@ -86,6 +91,22 @@ struct List: AsyncParsableCommand {
         if json { return Output.printJSON(downloads) }
         if downloads.isEmpty { return print("No downloads.") }
         downloads.forEach { Output.print($0, json: false) }
+    }
+}
+
+struct Limit: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Set the speed limit for all downloads, or for one with --id.")
+    @Argument(help: "Bytes per second, e.g. 2M, 500K, 1.5G, or \"off\".") var rate: String
+    @Option(help: "Download ID or a unique prefix of it.") var id: String?
+
+    func validate() throws {
+        if rate.lowercased() != "off", ByteRate.parse(rate) == nil { throw ValidationError("Not a speed: \(rate). Try 2M or 500K.") }
+    }
+
+    func run() async throws {
+        let bytes = rate.lowercased() == "off" ? nil : ByteRate.parse(rate)
+        let target: UUID? = if let id { try await Agent.resolve(id) } else { nil }
+        try await Agent.expectOK(.setLimit(downloadID: target, bytesPerSecond: bytes))
     }
 }
 
