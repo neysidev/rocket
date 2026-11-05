@@ -12,6 +12,12 @@ struct RocketApp: App {
                 .environment(app.agent)
                 .frame(minWidth: 760, minHeight: 480)
                 .onChange(of: app.agent.status) { app.downloads.agent = app.agent.client }
+                .onOpenURL { url in
+                    // rocket://add?url=… opens the add sheet for review; nothing starts without the user.
+                    guard let request = RocketURLRequest(url) else { return }
+                    app.downloads.beginAdding(request.links, folder: request.folder)
+                    NSApp.activate()
+                }
         }
         .commands {
             DownloadCommands(downloads: app.downloads)

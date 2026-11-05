@@ -49,6 +49,10 @@ targets:
       properties:
         SUFeedURL: https://neysidev.github.io/rocket/appcast.xml
         SUPublicEDKey: $(SPARKLE_PUBLIC_KEY)
+        # rocket://add?url=…&dir=… (FR-INT-02)
+        CFBundleURLTypes:
+          - CFBundleURLName: io.github.neysidev.rocket.add
+            CFBundleURLSchemes: [rocket]
     settings:
       base:
         PRODUCT_NAME: Rocket Downloader

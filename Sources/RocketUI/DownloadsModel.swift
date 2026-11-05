@@ -263,10 +263,10 @@ public final class DownloadsModel {
     // MARK: Adding
 
     /// Opens the add sheet with `links`, or with whatever links are on the clipboard.
-    public func beginAdding(_ links: [URL]? = nil) {
+    public func beginAdding(_ links: [URL]? = nil, folder: URL? = nil) {
         let links = links ?? LinkExtractor.urls(in: NSPasteboard.general.string(forType: .string) ?? "")
         adding = AddDownloadsModel(
-            text: links.map(\.absoluteString).joined(separator: "\n"), folder: settings.folder,
+            text: links.map(\.absoluteString).joined(separator: "\n"), folder: folder ?? settings.folder,
             connections: settings.connections, queueID: currentQueueID, queues: queues, agent: agent,
             existing: items.map(\.download)
         )
