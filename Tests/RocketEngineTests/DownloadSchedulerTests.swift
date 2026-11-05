@@ -154,6 +154,19 @@ actor MemoryRepository: DownloadRepository, CheckpointStore, QueueRepository, Ru
         #expect(try finalBytes(done) == RocketTestServer.content(count: size))
     }
 
+    @Test func reconnectsRunningDownloadsAfterWake() async throws {
+        let server = try await RocketTestServer()
+        let added = try await scheduler.add(url: server.url("/file/\(size)?delayMs=50&name=wake.bin"), folder: folder)
+        try await wait(for: added.id, [.downloading])
+        try await Task.sleep(for: .milliseconds(300))
+
+        try await scheduler.systemDidWake()
+        let done = try await wait(for: added.id, [.completed, .failed])
+        #expect(done.state == .completed)
+        #expect(try finalBytes(done) == RocketTestServer.content(count: size))
+        #expect(try await scheduler.details(id: added.id).log.contains { $0.message.contains("woke up") })
+    }
+
     @Test func rejectsNonHTTPURLs() async throws {
         await #expect(throws: DownloadError.invalidURL) {
             _ = try await scheduler.add(url: URL(string: "file:///etc/passwd")!, folder: folder)

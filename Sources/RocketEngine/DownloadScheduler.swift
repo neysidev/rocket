@@ -308,6 +308,18 @@ public actor DownloadScheduler {
         return downloads
     }
 
+    /// FR-ENG-08: the Mac woke from sleep. Connections that were open before sleep are usually dead, and waiting
+    /// for them to time out stalls for a minute, so running downloads reconnect from their last checkpoint now.
+    /// Transient failures are retried too: the network path may look unchanged across sleep, so reachability
+    /// alone would not retry them.
+    public func systemDidWake() async throws {
+        for id in Array(running.keys) {
+            log(id, "Mac woke up; reconnecting")
+            await stop(id, as: .queued)
+        }
+        try await networkAvailable()
+    }
+
     /// Network is back (or the Mac woke up): retry downloads that failed for transient reasons.
     public func networkAvailable() async throws {
         for var download in try await repository.all() where download.state == .failed && download.failure?.kind == .transient {
@@ -333,7 +345,10 @@ public actor DownloadScheduler {
         for queue in queues {
             let members = downloads.filter { $0.queueID == queue.id }
             if let schedule = queue.schedule, !schedule.isOpen(at: date) {
-                for id in runningQueue.filter({ $0.value == queue.id }).keys { await stop(id, as: .queued) }
+                for id in runningQueue.filter({ $0.value == queue.id }).keys {
+                    log(id, "Queue window closed; waiting for the next one")
+                    await stop(id, as: .queued)
+                }
                 continue
             }
             let queued = members.filter { $0.state == .queued && running[$0.id] == nil }.sorted { $0.position < $1.position }
@@ -445,7 +460,7 @@ public actor DownloadScheduler {
             if let reason = stopping[id] {
                 // Pause keeps the part file; cancel() cleans up after us.
                 download.state = reason
-                log(id, reason == .queued ? "Queue window closed; waiting for the next one" : "\(reason.rawValue.capitalized)")
+                if reason != .queued { log(id, reason.rawValue.capitalized) }
             } else if error is CancellationError {
                 download.state = .queued // agent shutting down: pick it up on next start
             } else if case DownloadError.remoteFileChanged = error, download.failure != .remoteFileChanged {

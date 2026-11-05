@@ -37,8 +37,8 @@ do {
     exit(1)
 }
 
-// Resume interrupted downloads, then retry transient failures whenever the network comes back
-// (network loss and wake from sleep both end with a satisfied path).
+// Resume interrupted downloads, retry transient failures whenever the network comes back, and reconnect
+// running downloads after wake from sleep (FR-ENG-08).
 // ponytail: agent never idles out; add the TRD's 60 s idle exit once clients reconnect on demand.
 Task {
     do { try await scheduler.start() } catch { log.error("Start failed: \(error.localizedDescription, privacy: .public)") }
@@ -46,6 +46,12 @@ Task {
         group.addTask {
             for await isOnline in NetworkReachability.updates() where isOnline {
                 try? await scheduler.networkAvailable()
+            }
+        }
+        group.addTask {
+            for await _ in SystemWake.events() {
+                log.info("Woke from sleep; reconnecting downloads")
+                try? await scheduler.systemDidWake()
             }
         }
         group.addTask {
