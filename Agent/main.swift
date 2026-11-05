@@ -13,7 +13,8 @@ let scheduler: DownloadScheduler
 do {
     let repository = GRDBDownloadRepository(db: try RocketDatabase.onDisk())
     scheduler = DownloadScheduler(
-        repository: repository, checkpoints: repository, queues: repository, transport: URLSessionHTTPTransport(),
+        repository: repository, checkpoints: repository, queues: repository, rules: repository,
+        transport: URLSessionHTTPTransport(),
         runPostAction: { await PostQueueActions.run($0) },
         onActivityChange: { await SleepAssertion.shared.update(downloading: $0) }
     )

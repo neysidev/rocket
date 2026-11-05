@@ -45,3 +45,12 @@ import Testing
     #expect(try await repo.queues().map(\.id) == ["default"])
     #expect(try await repo.download(id: download.id)?.queueID == "default")
 }
+
+@Test func rulesRoundTrip() async throws {
+    let repo = GRDBDownloadRepository(db: try .inMemory())
+    let rule = DownloadRule(name: "ISOs", priority: 3, match: RuleMatch(domains: ["ubuntu.com"], extensions: ["iso"], minBytes: 1), action: RuleAction(queueID: "night", connections: 2))
+    try await repo.save(rule)
+    #expect(try await repo.rules() == [rule])
+    try await repo.deleteRule(id: rule.id)
+    #expect(try await repo.rules().isEmpty)
+}

@@ -35,6 +35,9 @@ public enum Command: Codable, Sendable, Hashable {
     case snapshot
     /// Bytes per second, nil = unlimited. `downloadID` nil sets the global limit.
     case setLimit(downloadID: UUID?, bytesPerSecond: Int64?)
+    case rules
+    case saveRule(DownloadRule)
+    case deleteRule(id: String)
     case queues
     case saveQueue(DownloadQueue)
     case deleteQueue(id: String)
@@ -49,6 +52,7 @@ public enum Reply: Codable, Sendable {
     case download(Download)
     case info(RemoteFileInfo)
     case queues([DownloadQueue])
+    case rules([DownloadRule])
     case snapshot([Download])
     case error(String)
 }

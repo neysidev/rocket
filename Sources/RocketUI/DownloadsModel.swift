@@ -94,6 +94,7 @@ public final class DownloadsModel {
     public var agent: (any AgentCommanding)?
     public private(set) var items: [DownloadItem] = []
     public internal(set) var queues: [DownloadQueue] = []
+    public internal(set) var rules: [DownloadRule] = []
     /// Queue being edited (a new one has an unsaved id).
     public var editingQueue: DownloadQueue?
     private var polls = 0
@@ -288,6 +289,35 @@ public final class DownloadsModel {
     }
 
     // MARK: Queues
+
+    // MARK: Rules
+
+    public func refreshRules() async {
+        if let agent, case .rules(let rules)? = try? await agent.send(.rules) { self.rules = rules }
+    }
+
+    public func saveRule(_ rule: DownloadRule) async {
+        var rule = rule
+        if !rules.contains(where: { $0.id == rule.id }) { rule.priority = (rules.map(\.priority).max() ?? 0) + 1 }
+        await run(.saveRule(rule))
+        await refreshRules()
+    }
+
+    public func deleteRule(_ id: String) async {
+        await run(.deleteRule(id: id))
+        await refreshRules()
+    }
+
+    /// Rules run top to bottom; dragging changes their priority.
+    public func moveRules(from source: IndexSet, to destination: Int) async {
+        var ordered = rules
+        ordered.move(fromOffsets: source, toOffset: destination)
+        for (index, var rule) in ordered.enumerated() where rule.priority != index {
+            rule.priority = index
+            await run(.saveRule(rule))
+        }
+        await refreshRules()
+    }
 
     public func newQueue() {
         editingQueue = DownloadQueue(name: String(localized: "New Queue"), sortOrder: (queues.map(\.sortOrder).max() ?? 0) + 1)

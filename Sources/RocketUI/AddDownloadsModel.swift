@@ -77,6 +77,9 @@ public final class AddDownloadsModel: Identifiable {
 
     private let agent: (any AgentCommanding)?
     private let existing: [Download]
+    /// The folder and queue the sheet opened with; unchanged choices are left to rules and defaults.
+    private let initialFolder: URL
+    private let initialQueueID: String
     private let fileExists: (URL) -> Bool
 
     public init(
@@ -86,6 +89,8 @@ public final class AddDownloadsModel: Identifiable {
     ) {
         self.text = text
         self.folder = folder
+        initialFolder = folder
+        initialQueueID = queueID
         self.connections = connections
         self.queueID = queueID
         self.queues = queues
@@ -172,7 +177,10 @@ public final class AddDownloadsModel: Identifiable {
             default:
                 break
             }
-            let command = Command.add(url: candidate.url, directory: folder.path, fileName: candidates[index].fileName, connections: connections, queueID: queueID)
+            let command = Command.add(
+                url: candidate.url, directory: folder == initialFolder ? nil : folder.path, fileName: candidates[index].fileName,
+                queueID: queueID == initialQueueID && queueID == DownloadQueue.defaultID ? nil : queueID
+            )
             switch try? await agent.send(command) {
             case .download(let download)?: ids.append(download.id)
             case .error(let message)?: candidates[index].error = message

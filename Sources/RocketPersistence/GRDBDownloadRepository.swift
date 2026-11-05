@@ -104,3 +104,21 @@ extension GRDBDownloadRepository: QueueRepository {
         }
     }
 }
+
+extension DownloadRule: FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "rule"
+}
+
+extension GRDBDownloadRepository: RuleRepository {
+    public func rules() async throws -> [DownloadRule] {
+        try read { try DownloadRule.order(Column("priority")).fetchAll($0) }
+    }
+
+    public func save(_ rule: DownloadRule) async throws {
+        try write { try rule.save($0) }
+    }
+
+    public func deleteRule(id: String) async throws {
+        try write { _ = try DownloadRule.deleteOne($0, key: id) }
+    }
+}

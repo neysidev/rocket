@@ -35,13 +35,10 @@ struct AgentPeerHandler: XPCPeerHandler {
         do {
             switch command {
             case let .add(url, directory, fileName, connections, speedLimit, queueID):
-                // Unset options follow the app's settings.
-                let defaults = RocketDefaults()
+                // Unset options come from rules, then the app's settings (resolved by the scheduler).
                 let folder = directory.map { URL(filePath: ($0 as NSString).expandingTildeInPath, directoryHint: .isDirectory) }
-                    ?? defaults.folder
                 return .download(try await scheduler.add(
-                    url: url, folder: folder, fileName: fileName, connections: connections ?? defaults.connections,
-                    speedLimit: speedLimit, queueID: queueID ?? DownloadQueue.defaultID
+                    url: url, folder: folder, fileName: fileName, connections: connections, speedLimit: speedLimit, queueID: queueID
                 ))
             case .pause(let id):
                 try await scheduler.pause(id: id)
@@ -57,6 +54,14 @@ struct AgentPeerHandler: XPCPeerHandler {
                 return .ok
             case let .setLimit(id, bytesPerSecond):
                 try await scheduler.setLimit(id: id, bytesPerSecond: bytesPerSecond)
+                return .ok
+            case .rules:
+                return .rules(try await scheduler.rules())
+            case .saveRule(let rule):
+                try await scheduler.saveRule(rule)
+                return .ok
+            case .deleteRule(let id):
+                try await scheduler.deleteRule(id: id)
                 return .ok
             case .queues:
                 return .queues(try await scheduler.queues())

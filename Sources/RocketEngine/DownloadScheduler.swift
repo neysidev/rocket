@@ -8,6 +8,7 @@ public actor DownloadScheduler {
     private let repository: any DownloadRepository
     private let checkpoints: any CheckpointStore
     private let queueStore: any QueueRepository
+    private let ruleStore: (any RuleRepository)?
     private let now: @Sendable () -> Date
     /// Runs a queue's after-action (sleep, shut down, …) once it has nothing left to do.
     private let runPostAction: @Sendable (DownloadQueue) async -> Void
@@ -36,6 +37,7 @@ public actor DownloadScheduler {
 
     public init(
         repository: any DownloadRepository, checkpoints: any CheckpointStore, queues: any QueueRepository,
+        rules: (any RuleRepository)? = nil,
         transport: any HTTPTransport, maxActive: Int = 32, retry: RetryPolicy = RetryPolicy(),
         checkpointInterval: Duration = .seconds(2), defaults: RocketDefaults = RocketDefaults(),
         now: @escaping @Sendable () -> Date = { .now },
@@ -43,6 +45,7 @@ public actor DownloadScheduler {
         onActivityChange: @escaping @Sendable (Bool) async -> Void = { _ in }
     ) {
         queueStore = queues
+        ruleStore = rules
         self.now = now
         self.runPostAction = runPostAction
         self.onActivityChange = onActivityChange
@@ -73,18 +76,32 @@ public actor DownloadScheduler {
         return try await transport.probe(url)
     }
 
-    /// Probes the URL (FR-ADD-02), stores the download and queues it.
+    /// Probes the URL (FR-ADD-02), stores the download and queues it. Each option resolves as: what the request
+    /// says, else the first matching rule (FR-ORG-02), else the defaults; a download landing in the default folder
+    /// goes into its type's subfolder when auto-sort is on (FR-ORG-01).
     public func add(
-        url: URL, folder: URL, fileName: String? = nil, connections: Int = 8, speedLimit: Int64? = nil,
-        queueID: String = DownloadQueue.defaultID
+        url: URL, folder: URL? = nil, fileName: String? = nil, connections: Int? = nil, speedLimit: Int64? = nil,
+        queueID: String? = nil
     ) async throws -> Download {
         guard ["http", "https"].contains(url.scheme?.lowercased()) else { throw DownloadError.invalidURL }
         let info = try await transport.probe(url)
         let name = FileNameSanitizer.sanitize(fileName ?? info.suggestedFileName ?? url.lastPathComponent)
-        var download = Download(url: url, destinationPath: folder.path, fileName: name, connections: min(16, max(1, connections)))
+        let rule = DownloadRule.first(in: try await ruleStore?.rules() ?? [], url: url, fileName: name, size: info.totalBytes)
+
+        var destination = folder ?? rule?.action.folderPath.map { URL(filePath: $0, directoryHint: .isDirectory) } ?? defaults.folder
+        if folder == nil, rule?.action.folderPath == nil, defaults.autoSort {
+            destination = destination.appending(path: FileCategory(fileName: name).folderName, directoryHint: .isDirectory)
+        }
+        let knownQueues = Set(try await queues().map(\.id))
+        let queue = [queueID, rule?.action.queueID].compactMap { $0 }.first(where: knownQueues.contains) ?? DownloadQueue.defaultID
+
+        var download = Download(
+            url: url, destinationPath: destination.path, fileName: name,
+            connections: min(16, max(1, connections ?? rule?.action.connections ?? defaults.connections))
+        )
         download.remoteInfo = info
-        download.speedLimit = speedLimit
-        download.queueID = try await queues().contains { $0.id == queueID } ? queueID : DownloadQueue.defaultID
+        download.speedLimit = speedLimit ?? rule?.action.speedLimit
+        download.queueID = queue
         try await repository.save(download)
         log.info("Queued \(download.id, privacy: .public)")
         try await fill()
@@ -158,6 +175,20 @@ public actor DownloadScheduler {
 
     public var globalLimit: Int64? {
         get async { await globalLimiter.bytesPerSecond }
+    }
+
+    // MARK: Rules
+
+    public func rules() async throws -> [DownloadRule] {
+        try await ruleStore?.rules() ?? []
+    }
+
+    public func saveRule(_ rule: DownloadRule) async throws {
+        try await ruleStore?.save(rule)
+    }
+
+    public func deleteRule(id: String) async throws {
+        try await ruleStore?.deleteRule(id: id)
     }
 
     // MARK: Queues

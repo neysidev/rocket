@@ -100,6 +100,11 @@ public struct RocketDatabase: Sendable {
             }
             try db.execute(sql: "UPDATE queue SET postAction = 'none' WHERE postAction IS NULL")
         }
+        m.registerMigration("v4_ruleNames") { db in
+            try db.alter(table: "rule") { t in
+                t.add(column: "name", .text).notNull().defaults(to: "")
+            }
+        }
         return m
     }
 }

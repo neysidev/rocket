@@ -16,6 +16,7 @@ public final class AppSettings {
     /// Mirror of the agent's global limit; the agent persists it when the app sets it over XPC.
     public var globalSpeedLimit: Int64?
     public var sleepPrevention: SleepPrevention { didSet { defaults.sleepPrevention = sleepPrevention } }
+    public var autoSort: Bool { didSet { defaults.autoSort = autoSort } }
     public private(set) var launchAtLogin = false
     public private(set) var launchAtLoginError: String?
 
@@ -26,6 +27,7 @@ public final class AppSettings {
         notificationsEnabled = defaults.notificationsEnabled
         globalSpeedLimit = defaults.globalSpeedLimit
         sleepPrevention = defaults.sleepPrevention
+        autoSort = defaults.autoSort
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
@@ -40,15 +42,30 @@ public final class AppSettings {
     }
 }
 
+/// General and Rules tabs.
 public struct SettingsView: View {
-    @Bindable var settings: AppSettings
-    @State private var choosingFolder = false
+    let model: DownloadsModel
 
-    public init(settings: AppSettings) {
-        self.settings = settings
+    public init(model: DownloadsModel) {
+        self.model = model
     }
 
     public var body: some View {
+        TabView {
+            GeneralSettings(settings: model.settings)
+                .tabItem { Label("General", systemImage: "gearshape") }
+            RulesSettings(model: model)
+                .tabItem { Label("Rules", systemImage: "line.3.horizontal.decrease") }
+        }
+        .task { await model.refreshRules() }
+    }
+}
+
+struct GeneralSettings: View {
+    @Bindable var settings: AppSettings
+    @State private var choosingFolder = false
+
+    var body: some View {
         Form {
             Section("Downloads") {
                 LabeledContent("Save to") {
@@ -59,6 +76,7 @@ public struct SettingsView: View {
                     }
                     .help(settings.folder.path)
                 }
+                Toggle("Sort into folders by type (Video, Archives, Documents, …)", isOn: $settings.autoSort)
                 Picker("Connections per download", selection: $settings.connections) {
                     ForEach([1, 2, 4, 8, 12, 16], id: \.self) { Text("\($0)").tag($0) }
                 }

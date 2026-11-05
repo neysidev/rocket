@@ -15,7 +15,7 @@ struct RocketApp: App {
         }
         .commands { DownloadCommands(downloads: app.downloads) }
         Settings {
-            SettingsView(settings: app.downloads.settings)
+            SettingsView(model: app.downloads)
         }
         MenuBarExtra {
             MenuBarContent(downloads: app.downloads)

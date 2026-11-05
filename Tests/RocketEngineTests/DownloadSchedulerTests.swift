@@ -6,7 +6,12 @@ import RocketTestServer
 import Testing
 
 /// In-memory fake for every persistence port.
-actor MemoryRepository: DownloadRepository, CheckpointStore, QueueRepository {
+actor MemoryRepository: DownloadRepository, CheckpointStore, QueueRepository, RuleRepository {
+    var ruleStore: [String: DownloadRule] = [:]
+    func rules() -> [DownloadRule] { Array(ruleStore.values) }
+    func save(_ rule: DownloadRule) { ruleStore[rule.id] = rule }
+    func deleteRule(id: String) { ruleStore[id] = nil }
+
     var downloads: [UUID: Download] = [:]
     var segments: [UUID: [Segment]] = [:]
     var queueStore: [String: DownloadQueue] = [:]

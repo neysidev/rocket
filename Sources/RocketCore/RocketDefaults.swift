@@ -12,6 +12,7 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
         static let notifications = "notificationsEnabled"
         static let globalSpeedLimit = "globalSpeedLimit"
         static let sleepPrevention = "sleepPrevention"
+        static let autoSort = "autoSortByType"
     }
 
     private let store: UserDefaults
@@ -45,6 +46,12 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
     public var sleepPrevention: SleepPrevention {
         get { store.string(forKey: Key.sleepPrevention).flatMap(SleepPrevention.init(rawValue:)) ?? .onPower }
         nonmutating set { store.set(newValue.rawValue, forKey: Key.sleepPrevention) }
+    }
+
+    /// Files downloads into Video, Archives, … under the default folder (FR-ORG-01). Off until the user opts in.
+    public var autoSort: Bool {
+        get { store.bool(forKey: Key.autoSort) }
+        nonmutating set { store.set(newValue, forKey: Key.autoSort) }
     }
 
     public var notificationsEnabled: Bool {
