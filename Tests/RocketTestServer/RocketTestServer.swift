@@ -20,15 +20,20 @@ public final class RocketTestServer: Sendable {
     public let port: UInt16
     private let listener: NWListener
 
-    /// Request counts per URL; a lock because Network.framework calls back on a dispatch queue.
-    private let counts: OSAllocatedUnfairLock<[String: Int]>
+    struct State {
+        var counts: [String: Int] = [:]
+        var version = "1"
+    }
+
+    /// Request counts and current content version; a lock because Network.framework calls back on a dispatch queue.
+    private let counts: OSAllocatedUnfairLock<State>
 
     public init() async throws {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         let listener = try NWListener(using: parameters)
         let queue = DispatchQueue(label: "RocketTestServer")
-        let counts = OSAllocatedUnfairLock(initialState: [String: Int]())
+        let counts = OSAllocatedUnfairLock(initialState: State())
         self.listener = listener
         self.counts = counts
 
@@ -66,7 +71,12 @@ public final class RocketTestServer: Sendable {
 
     /// Number of requests the server has received for `pathAndQuery`.
     public func requestCount(_ pathAndQuery: String) -> Int {
-        counts.withLock { $0[pathAndQuery, default: 0] }
+        counts.withLock { $0.counts[pathAndQuery, default: 0] }
+    }
+
+    /// Changes the bytes, ETag and Last-Modified served for URLs without a `version` query (simulates a re-upload).
+    public func setVersion(_ version: String) {
+        counts.withLock { $0.version = version }
     }
 
     // MARK: Content
@@ -89,7 +99,7 @@ public final class RocketTestServer: Sendable {
 
     // MARK: HTTP
 
-    private static func receive(_ connection: NWConnection, buffer: Data, queue: DispatchQueue, counts: OSAllocatedUnfairLock<[String: Int]>) {
+    private static func receive(_ connection: NWConnection, buffer: Data, queue: DispatchQueue, counts: OSAllocatedUnfairLock<State>) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, isComplete, error in
             var buffer = buffer
             if let data { buffer.append(data) }
@@ -104,7 +114,7 @@ public final class RocketTestServer: Sendable {
         }
     }
 
-    private static func respond(_ connection: NWConnection, head: String, queue: DispatchQueue, counts: OSAllocatedUnfairLock<[String: Int]>) {
+    private static func respond(_ connection: NWConnection, head: String, queue: DispatchQueue, counts: OSAllocatedUnfairLock<State>) {
         let lines = head.components(separatedBy: "\r\n")
         let requestLine = lines[0].split(separator: " ")
         guard requestLine.count >= 2, let components = URLComponents(string: "http://x\(requestLine[1])") else {
@@ -119,9 +129,9 @@ public final class RocketTestServer: Sendable {
         }
         var query: [String: String] = [:]
         for item in components.queryItems ?? [] { query[item.name] = item.value ?? "" }
-        let count = counts.withLock { counts in
-            counts[target, default: 0] += 1
-            return counts[target]!
+        let (count, currentVersion) = counts.withLock { state in
+            state.counts[target, default: 0] += 1
+            return (state.counts[target]!, state.version)
         }
 
         if components.path == "/redirect", let to = query["to"] {
@@ -135,7 +145,7 @@ public final class RocketTestServer: Sendable {
             return send(connection, status: fail, headers: ["Retry-After": "0"])
         }
 
-        let version = query["version"] ?? "1"
+        let version = query["version"] ?? currentVersion
         let etag = etag(version: version)
         let lastModified = "Wed, 01 Jan 2025 00:00:\(String(format: "%02d", version.utf8.reduce(0) { $0 + Int($1) } % 60)) GMT"
         let rangesEnabled = query["ranges"] != "0"

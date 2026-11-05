@@ -82,6 +82,13 @@ public struct RocketDatabase: Sendable {
                 t.column("valueJSON", .text).notNull()
             }
         }
+        m.registerMigration("v2_resumeState") { db in
+            try db.alter(table: "download") { t in
+                t.add(column: "acceptsRanges", .boolean).notNull().defaults(to: false)
+                t.add(column: "receivedBytes", .integer).notNull().defaults(to: 0)
+                t.add(column: "failure", .text) // JSON-encoded DownloadError
+            }
+        }
         return m
     }
 }

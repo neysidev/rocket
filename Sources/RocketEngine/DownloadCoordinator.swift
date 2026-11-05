@@ -12,14 +12,20 @@ public actor DownloadCoordinator {
     private let transport: any HTTPTransport
     private let planner: SegmentPlanner
     private let connections: Int
+    private let checkpointInterval: Duration
+    private let onCheckpoint: (@Sendable ([Segment]) async throws -> Void)?
 
     public private(set) var segments: [Segment]
     private var active: Set<Int> = []
 
     public init(
         url: URL, info: RemoteFileInfo, file: PartFile, segments: [Segment] = [],
-        connections: Int, transport: any HTTPTransport, planner: SegmentPlanner = SegmentPlanner()
+        connections: Int, transport: any HTTPTransport, planner: SegmentPlanner = SegmentPlanner(),
+        checkpointInterval: Duration = .seconds(2),
+        onCheckpoint: (@Sendable ([Segment]) async throws -> Void)? = nil
     ) {
+        self.checkpointInterval = checkpointInterval
+        self.onCheckpoint = onCheckpoint
         self.url = url
         self.info = info
         self.file = file
@@ -41,8 +47,27 @@ public actor DownloadCoordinator {
     }
 
     /// Downloads every remaining byte into the part file. Cancelling the calling task stops all workers;
-    /// `segments` keeps how far each one got.
+    /// `segments` keeps how far each one got, and a final checkpoint records it.
     public func run() async throws {
+        do {
+            try await transferAll()
+            try await checkpoint()
+        } catch {
+            try? await checkpoint()
+            throw error
+        }
+    }
+
+    /// Captures progress, makes those bytes durable, then records them. The database never claims
+    /// bytes the disk lacks: segments are read before `fsync`, so they can only under-report.
+    public nonisolated func checkpoint() async throws {
+        guard let onCheckpoint else { return }
+        let snapshot = await segments
+        try file.sync()
+        try await onCheckpoint(snapshot)
+    }
+
+    private func transferAll() async throws {
         if segments.isEmpty || !isSegmented && segments.contains(where: { !$0.isComplete }) {
             // Without range support a single stream must restart from byte 0.
             segments = isSegmented
@@ -51,15 +76,28 @@ public actor DownloadCoordinator {
         }
         let target = isSegmented ? connections : 1
 
+        let ticker = -1
         try await withThrowingTaskGroup(of: Int.self) { group in
+            if onCheckpoint != nil {
+                // ponytail: time-based only (every 2 s); add the TRD's 8 MiB trigger if crash re-downloads matter.
+                group.addTask { [checkpointInterval] in
+                    while (try? await Task.sleep(for: checkpointInterval)) != nil {
+                        try await self.checkpoint()
+                    }
+                    return ticker
+                }
+            }
             while active.count < target, let index = claimSegment() {
                 group.addTask { try await self.transfer(index); return index }
             }
+            if active.isEmpty { group.cancelAll() } // nothing left to fetch
             while let finished = try await group.next() {
+                guard finished != ticker else { continue }
                 active.remove(finished)
                 while active.count < target, let index = claimSegment() {
                     group.addTask { try await self.transfer(index); return index }
                 }
+                if active.isEmpty { group.cancelAll() } // stops the ticker
             }
         }
 
