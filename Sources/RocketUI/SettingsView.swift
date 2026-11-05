@@ -17,6 +17,7 @@ public final class AppSettings {
     public var globalSpeedLimit: Int64?
     public var sleepPrevention: SleepPrevention { didSet { defaults.sleepPrevention = sleepPrevention } }
     public var autoSort: Bool { didSet { defaults.autoSort = autoSort } }
+    public var showDockProgress: Bool { didSet { defaults.showDockProgress = showDockProgress } }
     /// The agent reads it before each request.
     public var proxy: ProxySettings { didSet { defaults.proxy = proxy } }
     public private(set) var launchAtLogin = false
@@ -30,6 +31,7 @@ public final class AppSettings {
         globalSpeedLimit = defaults.globalSpeedLimit
         sleepPrevention = defaults.sleepPrevention
         autoSort = defaults.autoSort
+        showDockProgress = defaults.showDockProgress
         proxy = defaults.proxy
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
@@ -108,6 +110,7 @@ struct GeneralSettings: View {
             }
             Section("Notifications") {
                 Toggle("Notify when downloads finish or fail", isOn: $settings.notificationsEnabled)
+                Toggle("Show progress and count on the Dock icon", isOn: $settings.showDockProgress)
             }
             Section("Startup") {
                 Toggle("Open Rocket at login", isOn: Binding(get: { settings.launchAtLogin }, set: settings.setLaunchAtLogin))

@@ -13,6 +13,7 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
         static let globalSpeedLimit = "globalSpeedLimit"
         static let sleepPrevention = "sleepPrevention"
         static let autoSort = "autoSortByType"
+        static let dockProgress = "showDockProgress"
     }
 
     private let store: UserDefaults
@@ -56,6 +57,11 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
 
     func storeData(_ key: String) -> Data? { store.data(forKey: key) }
     func setStoreData(_ data: Data?, _ key: String) { store.set(data, forKey: key) }
+
+    public var showDockProgress: Bool {
+        get { store.object(forKey: Key.dockProgress) as? Bool ?? true }
+        nonmutating set { store.set(newValue, forKey: Key.dockProgress) }
+    }
 
     public var notificationsEnabled: Bool {
         get { store.object(forKey: Key.notifications) as? Bool ?? true }

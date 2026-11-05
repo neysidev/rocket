@@ -36,6 +36,20 @@ struct MainWindow: View {
             }
             ToolbarItem {
                 Menu {
+                    Picker("Sort By", selection: $downloads.sort) {
+                        ForEach(DownloadSort.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Button("Clear Completed") { Task { await downloads.clearCompleted() } }
+                        .disabled(!downloads.hasFinished)
+                } label: {
+                    Label("View Options", systemImage: "line.3.horizontal.decrease")
+                }
+                .help("Sort and clear")
+            }
+            ToolbarItem {
+                Menu {
                     SpeedLimitPicker("Limit All Downloads", current: downloads.settings.globalSpeedLimit) { rate in
                         Task { await downloads.setGlobalLimit(rate) }
                     }

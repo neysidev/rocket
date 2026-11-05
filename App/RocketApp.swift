@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let agent = AgentConnection()
     let downloads = DownloadsModel()
     private var notifier: Notifier?
+    private let dock = DockProgress()
     private var polling: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -41,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let notifier = Notifier(downloads: downloads, isEnabled: { settings.notificationsEnabled })
         self.notifier = notifier
         downloads.onEvent = { notifier.post($0) }
+        downloads.onUpdate = { [dock, downloads] in
+            dock.update(count: downloads.transferringCount + downloads.queuedCount, fraction: downloads.overallFraction,
+                        enabled: settings.showDockProgress)
+        }
         polling = Task { [agent, downloads] in
             await agent.connect()
             downloads.agent = agent.client
@@ -83,6 +88,15 @@ struct DownloadCommands: Commands {
             Divider()
             Button("Pause All") { Task { await downloads.pauseAll() } }
             Button("Resume All") { Task { await downloads.resumeAll() } }
+            Divider()
+            Button("Clear Completed") { Task { await downloads.clearCompleted() } }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .disabled(!downloads.hasFinished)
+        }
+        CommandGroup(after: .toolbar) {
+            Picker("Sort By", selection: Binding(get: { downloads.sort }, set: { downloads.sort = $0 })) {
+                ForEach(DownloadSort.allCases) { Text($0.title).tag($0) }
+            }
         }
     }
 }

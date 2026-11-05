@@ -48,6 +48,21 @@ public enum DownloadEvent: Equatable, Sendable {
     case queueFinished(DownloadQueue)
 }
 
+/// History sort (FR-APP-07). Queue views always show run order.
+public enum DownloadSort: String, CaseIterable, Identifiable, Sendable {
+    case dateAdded, name, size, status
+
+    public var id: Self { self }
+    public var title: String {
+        switch self {
+        case .dateAdded: String(localized: "Date Added")
+        case .name: String(localized: "Name")
+        case .size: String(localized: "Size")
+        case .status: String(localized: "Status")
+        }
+    }
+}
+
 public enum SidebarFilter: Identifiable, Hashable, Sendable {
     case all, active, completed, failed
     case queue(String)
@@ -105,6 +120,9 @@ public final class DownloadsModel {
     private var polls = 0
     public var filter: SidebarFilter = .all
     public var search = ""
+    public var sort: DownloadSort = .dateAdded
+    /// Called after each snapshot that changed something (Dock tile).
+    public var onUpdate: (@MainActor () -> Void)?
     public var selection: Set<UUID> = []
     /// Last command error, shown to the user once.
     public var alert: String?
@@ -131,7 +149,14 @@ public final class DownloadsModel {
         }
         // A queue shows its run order; everything else newest first.
         if case .queue = filter { return matching.sorted { $0.download.position < $1.download.position } }
-        return matching
+        switch sort {
+        case .dateAdded: return matching // agent sends newest first
+        case .name: return matching.sorted { $0.download.fileName.localizedStandardCompare($1.download.fileName) == .orderedAscending }
+        case .size: return matching.sorted { ($0.download.totalBytes ?? -1) > ($1.download.totalBytes ?? -1) }
+        case .status:
+            let order: [DownloadState] = [.downloading, .verifying, .probing, .queued, .paused, .failed, .completed, .cancelled]
+            return matching.sorted { (order.firstIndex(of: $0.download.state) ?? 0) < (order.firstIndex(of: $1.download.state) ?? 0) }
+        }
     }
 
     public func count(_ filter: SidebarFilter) -> Int {
@@ -211,7 +236,10 @@ public final class DownloadsModel {
         speedSamples = speedSamples.filter { ids.contains($0.key) }
         samples = samples.filter { ids.contains($0.key) }
         selection.formIntersection(ids)
-        if next != items { items = next }
+        if next != items {
+            items = next
+            onUpdate?()
+        }
         speedHistory = Array((speedHistory + [totalSpeed]).suffix(16))
     }
 
@@ -378,6 +406,21 @@ public final class DownloadsModel {
         let before = visible[destination...].first { !moving.contains($0.id) }?.id
         await move(moving, toQueue: queueID, before: before)
     }
+
+    /// Overall progress of running downloads with a known size, for the Dock.
+    public var overallFraction: Double? {
+        let running = items.map(\.download).filter { $0.state.isActive && $0.totalBytes != nil }
+        let total = running.reduce(Int64(0)) { $0 + ($1.totalBytes ?? 0) }
+        guard total > 0 else { return nil }
+        return Double(running.reduce(Int64(0)) { $0 + $1.receivedBytes }) / Double(total)
+    }
+
+    /// Removes completed and cancelled downloads from the list; files stay on disk (FR-APP-07).
+    public func clearCompleted() async {
+        await remove(items.filter { [.completed, .cancelled].contains($0.download.state) }.map(\.id))
+    }
+
+    public var hasFinished: Bool { items.contains { [.completed, .cancelled].contains($0.download.state) } }
 
     public func pauseAll() async { await pause(items.map(\.id)) }
     public func resumeAll() async { await resume(items.filter { $0.download.state == .paused }.map(\.id)) }

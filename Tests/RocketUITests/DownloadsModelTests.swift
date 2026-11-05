@@ -199,3 +199,49 @@ private func download(_ name: String, _ state: DownloadState, received: Int64 = 
         #expect(moves == [.move(ids: [items[2].id], toQueue: "night", before: items[0].id)])
     }
 }
+
+@MainActor
+@Suite struct PolishTests {
+    func download(_ name: String, _ state: DownloadState, received: Int64 = 0, total: Int64? = nil) -> Download {
+        var download = Download(url: URL(string: "https://example.com/\(name)")!, destinationPath: "/tmp", fileName: name, state: state)
+        download.receivedBytes = received
+        download.totalBytes = total
+        return download
+    }
+
+    @Test func overallProgressCountsOnlyRunningWithKnownSize() {
+        let model = DownloadsModel()
+        model.apply([
+            download("a", .downloading, received: 25, total: 100), download("b", .queued, received: 0, total: 100),
+            download("c", .downloading, received: 5, total: nil), download("d", .completed, received: 50, total: 50),
+        ], now: .now)
+        #expect(model.overallFraction == 0.125)
+        model.apply([download("d", .completed, received: 50, total: 50)], now: .now)
+        #expect(model.overallFraction == nil)
+    }
+
+    @Test func clearCompletedRemovesFinishedOnly() async {
+        let agent = FakeAgent()
+        let done = download("done", .completed), gone = download("gone", .cancelled), running = download("run", .downloading)
+        await agent.set([done, gone, running])
+        let model = DownloadsModel(agent: agent)
+        await model.refresh()
+        await model.clearCompleted()
+        let removed = await agent.sent.compactMap { if case let .remove(id, deleteFile) = $0 { (id, deleteFile) } else { nil } }
+        #expect(Set(removed.map(\.0)) == [done.id, gone.id])
+        #expect(removed.allSatisfy { !$0.1 }) // files stay
+    }
+
+    @Test func sortsHistory() {
+        let model = DownloadsModel()
+        model.apply([
+            download("b.iso", .completed, total: 10), download("A.zip", .failed, total: 300), download("c.mov", .downloading, total: 20),
+        ], now: .now)
+        model.sort = .name
+        #expect(model.visibleItems.map(\.download.fileName) == ["A.zip", "b.iso", "c.mov"])
+        model.sort = .size
+        #expect(model.visibleItems.map(\.download.fileName) == ["A.zip", "c.mov", "b.iso"])
+        model.sort = .status
+        #expect(model.visibleItems.map(\.download.fileName) == ["c.mov", "A.zip", "b.iso"])
+    }
+}
