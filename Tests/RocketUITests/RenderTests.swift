@@ -73,4 +73,29 @@ import Testing
                 .write(to: URL(filePath: dir).appending(path: "add-sheet.png"))
         }
     }
+
+    @Test(arguments: [NSAppearance.Name.aqua, .darkAqua])
+    func menuBarPanelRenders(appearance: NSAppearance.Name) throws {
+        let model = DownloadsModel()
+        var history = Self.items.map(\.download)
+        for hoursAgo in [0.3, 2.2, 3.1, 7, 12, 13, 20] {
+            var done = Self.sample("old-\(hoursAgo).zip", .completed, 0, Int64(hoursAgo * 400_000_000)).download
+            done.completedAt = Date.now.addingTimeInterval(-hoursAgo * 3600)
+            history.append(done)
+        }
+        model.apply(history, now: .now)
+        model.apply(history.map { var d = $0; if d.state == .downloading { d.receivedBytes += 84_000_000 }; return d }, now: .now + .seconds(1))
+        let view = MenuBarPanel(model: model) {}
+            .background(RocketColor.panel)
+            .environment(\.colorScheme, appearance == .darkAqua ? .dark : .light)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        var image: CGImage?
+        NSAppearance(named: appearance)!.performAsCurrentDrawingAppearance { image = renderer.cgImage }
+        let rendered = try #require(image)
+        if let dir = ProcessInfo.processInfo.environment["ROCKET_RENDER_DIR"] {
+            try NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:])!
+                .write(to: URL(filePath: dir).appending(path: "panel-\(appearance.rawValue).png"))
+        }
+    }
 }

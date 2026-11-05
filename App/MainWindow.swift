@@ -41,39 +41,3 @@ struct MainWindow: View {
         }
     }
 }
-
-struct MenuBarPanel: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: RocketSpace.s3) {
-            Text("Rocket")
-                .font(.rocketTitle)
-                .foregroundStyle(RocketColor.textPrimary)
-            HStack(spacing: RocketSpace.s3) {
-                StatCard(label: "Active", value: "0", unit: nil)
-                StatCard(label: "Speed", value: "0", unit: "MB/s")
-                StatCard(label: "Queued", value: "0", unit: nil)
-            }
-        }
-        .padding(RocketSpace.s3)
-        .frame(width: RocketSize.menuBarPanelWidth)
-    }
-}
-
-struct StatCard: View {
-    let label: String
-    let value: String
-    let unit: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: RocketSpace.s3) {
-            Text(label).font(.rocketLabel).foregroundStyle(RocketColor.textSecondary)
-            HStack(alignment: .firstTextBaseline, spacing: RocketSpace.s2) {
-                Text(value).font(.rocketMetricLarge).foregroundStyle(RocketColor.textPrimary)
-                if let unit { Text(unit).font(.rocketLabel).foregroundStyle(RocketColor.textSecondary) }
-            }
-        }
-        .padding(RocketSpace.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RocketColor.card, in: RoundedRectangle(cornerRadius: RocketRadius.card))
-    }
-}

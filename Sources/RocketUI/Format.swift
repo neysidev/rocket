@@ -19,6 +19,19 @@ public enum Format {
         return value.formatted(.number.precision(.fractionLength(digits))) + " " + units[unit]
     }
 
+    /// Value and unit for tight spaces: whole numbers from 10 up ("84", "MB/s"), one decimal below ("8.4").
+    public static func compactSpeed(_ bytesPerSecond: Double) -> (value: String, unit: String) {
+        let units = ["B/s", "KB/s", "MB/s", "GB/s"]
+        var value = max(0, bytesPerSecond)
+        var unit = 0
+        while value >= 1000, unit < units.count - 1 {
+            value /= 1000
+            unit += 1
+        }
+        let digits = value >= 10 || unit == 0 ? 0 : 1
+        return (value.formatted(.number.precision(.fractionLength(digits))), units[unit])
+    }
+
     /// "2 min left", "1 hr left", "45 sec left".
     public static func timeLeft(_ seconds: Double) -> String {
         let seconds = max(1, Int(seconds.rounded(.up)))

@@ -131,3 +131,35 @@ private func download(_ name: String, _ state: DownloadState, received: Int64 = 
         #expect(request.identifier == download.id.uuidString)
     }
 }
+
+@MainActor
+@Suite struct PanelStatsTests {
+    func item(_ state: DownloadState, completedHoursAgo: Double? = nil, bytes: Int64 = 1_000) -> Download {
+        var download = Download(url: URL(string: "https://example.com/f")!, destinationPath: "/tmp", fileName: "f", state: state)
+        download.totalBytes = bytes
+        download.completedAt = completedHoursAgo.map { Date.now.addingTimeInterval(-$0 * 3600) }
+        return download
+    }
+
+    @Test func countsAndHourlyThroughput() {
+        let model = DownloadsModel()
+        model.apply([
+            item(.downloading), item(.queued), item(.queued), item(.paused),
+            item(.completed, completedHoursAgo: 0.2, bytes: 500), item(.completed, completedHoursAgo: 0.5, bytes: 250),
+            item(.completed, completedHoursAgo: 5.5, bytes: 100), item(.completed, completedHoursAgo: 30, bytes: 9_999),
+        ], now: .now)
+        #expect(model.transferringCount == 1)
+        #expect(model.queuedCount == 2)
+        let buckets = model.hourlyThroughput()
+        #expect(buckets.count == 24)
+        #expect(buckets[23] == 750)
+        #expect(buckets[18] == 100)
+        #expect(buckets.reduce(0, +) == 850) // older than 24 h is excluded
+    }
+
+    @Test func sparklineKeepsLast16Samples() {
+        let model = DownloadsModel()
+        for _ in 0..<20 { model.apply([], now: .now) }
+        #expect(model.speedHistory.count == 16)
+    }
+}

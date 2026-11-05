@@ -118,6 +118,22 @@ public final class DownloadsModel {
     }
 
     public var totalSpeed: Double { items.reduce(0) { $0 + $1.speed } }
+    /// Last 16 aggregate speed samples (one per snapshot), oldest first, for the sparkline.
+    public private(set) var speedHistory: [Double] = Array(repeating: 0, count: 16)
+    public var transferringCount: Int { items.count { [.probing, .downloading, .verifying].contains($0.download.state) } }
+    public var queuedCount: Int { items.count { $0.download.state == .queued } }
+    public var isDownloading: Bool { items.contains { $0.download.state == .downloading } }
+
+    /// Bytes of downloads completed in each of the last 24 hours, oldest first; the last bucket is the current hour.
+    public func hourlyThroughput(now: Date = .now) -> [Int64] {
+        var buckets = Array(repeating: Int64(0), count: 24)
+        for item in items {
+            guard item.download.state == .completed, let completed = item.download.completedAt else { continue }
+            let hoursAgo = Int(now.timeIntervalSince(completed) / 3600)
+            if (0..<24).contains(hoursAgo) { buckets[23 - hoursAgo] += item.download.totalBytes ?? item.download.receivedBytes }
+        }
+        return buckets
+    }
     public var hasRunning: Bool { items.contains { $0.download.state.isActive } }
     public var hasPaused: Bool { items.contains { $0.download.state == .paused } }
 
@@ -149,6 +165,7 @@ public final class DownloadsModel {
         samples = samples.filter { ids.contains($0.key) }
         selection.formIntersection(ids)
         if next != items { items = next }
+        speedHistory = Array((speedHistory + [totalSpeed]).suffix(16))
     }
 
     private func measureSpeed(_ download: Download, now: ContinuousClock.Instant) -> Double {

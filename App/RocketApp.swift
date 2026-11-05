@@ -7,7 +7,7 @@ struct RocketApp: App {
     @NSApplicationDelegateAdaptor private var app: AppDelegate
 
     var body: some Scene {
-        WindowGroup("Rocket") {
+        WindowGroup("Rocket", id: "main") {
             MainWindow(downloads: app.downloads)
                 .environment(app.agent)
                 .frame(minWidth: 760, minHeight: 480)
@@ -17,8 +17,11 @@ struct RocketApp: App {
         Settings {
             SettingsView(settings: app.downloads.settings)
         }
-        MenuBarExtra("Rocket", systemImage: "arrow.down.circle") {
-            MenuBarPanel()
+        MenuBarExtra {
+            MenuBarContent(downloads: app.downloads)
+        } label: {
+            // Filled while downloading. ponytail: SF Symbol until the custom rocket.down glyph exists.
+            Image(systemName: app.downloads.isDownloading ? "arrow.down.circle.fill" : "arrow.down.circle")
         }
         .menuBarExtraStyle(.window)
     }
@@ -47,6 +50,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         polling?.cancel()
+    }
+}
+
+struct MenuBarContent: View {
+    let downloads: DownloadsModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        MenuBarPanel(model: downloads) {
+            openWindow(id: "main")
+            NSApp.activate()
+        }
     }
 }
 
