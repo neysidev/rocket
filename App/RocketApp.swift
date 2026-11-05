@@ -4,22 +4,16 @@ import SwiftUI
 
 @main
 struct RocketApp: App {
-    @State private var agent = AgentConnection()
-    @State private var downloads = DownloadsModel()
+    @NSApplicationDelegateAdaptor private var app: AppDelegate
 
     var body: some Scene {
         WindowGroup("Rocket") {
-            MainWindow(downloads: downloads)
-                .environment(agent)
+            MainWindow(downloads: app.downloads)
+                .environment(app.agent)
                 .frame(minWidth: 760, minHeight: 480)
-                .task {
-                    await agent.connect()
-                    downloads.agent = agent.client
-                    await downloads.poll()
-                }
-                .onChange(of: agent.status) { downloads.agent = agent.client }
+                .onChange(of: app.agent.status) { app.downloads.agent = app.agent.client }
         }
-        .commands { DownloadCommands(downloads: downloads) }
+        .commands { DownloadCommands(downloads: app.downloads) }
         Settings {
             Text("Settings")
                 .font(.rocketBody)
@@ -29,6 +23,31 @@ struct RocketApp: App {
             MenuBarPanel()
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+/// Composition root: owns the agent connection and the download state for the app's whole lifetime,
+/// so polling and notifications continue while the window is closed (the menu bar extra keeps the app running).
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let agent = AgentConnection()
+    let downloads = DownloadsModel()
+    private var notifier: Notifier?
+    private var polling: Task<Void, Never>?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let notifier = Notifier(downloads: downloads)
+        self.notifier = notifier
+        downloads.onEvent = { notifier.post($0) }
+        polling = Task { [agent, downloads] in
+            await agent.connect()
+            downloads.agent = agent.client
+            await downloads.poll()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        polling?.cancel()
     }
 }
 

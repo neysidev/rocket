@@ -102,3 +102,32 @@ private func download(_ name: String, _ state: DownloadState, received: Int64 = 
         #expect(FileCategory(fileName: "README") == .other)
     }
 }
+
+@MainActor
+@Suite struct NotificationTests {
+    @Test func reportsOnlyNewCompletionsAndFailures() {
+        let model = DownloadsModel()
+        var events: [DownloadEvent] = []
+        model.onEvent = { events.append($0) }
+
+        var running = Download(url: URL(string: "https://example.com/a.iso")!, destinationPath: "/tmp", fileName: "a.iso", state: .downloading)
+        let old = Download(url: URL(string: "https://example.com/old.iso")!, destinationPath: "/tmp", fileName: "old.iso", state: .completed)
+        model.apply([running, old], now: .now) // first snapshot: history, no events
+        #expect(events.isEmpty)
+
+        running.state = .completed
+        model.apply([running, old], now: .now)
+        model.apply([running, old], now: .now) // unchanged: no repeat
+        #expect(events == [.completed(running)])
+    }
+
+    @Test func notificationContent() {
+        var download = Download(url: URL(string: "https://example.com/a.iso")!, destinationPath: "/tmp", fileName: "a.iso", state: .failed)
+        download.failure = .diskFull
+        let request = Notifier.request(for: .failed(download))
+        #expect(request.content.title == "Download failed")
+        #expect(request.content.subtitle == "The disk is full.")
+        #expect(request.content.categoryIdentifier == "download.failed")
+        #expect(request.identifier == download.id.uuidString)
+    }
+}

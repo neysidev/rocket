@@ -41,6 +41,11 @@ public struct DownloadItem: Identifiable, Equatable, Sendable {
     }
 }
 
+public enum DownloadEvent: Equatable, Sendable {
+    case completed(Download)
+    case failed(Download)
+}
+
 public enum SidebarFilter: String, CaseIterable, Identifiable, Hashable, Sendable {
     case all, active, completed, failed
 
@@ -91,6 +96,10 @@ public final class DownloadsModel {
     public var defaultConnections = 8
 
     private var samples: [UUID: (bytes: Int64, time: ContinuousClock.Instant, speed: Double)] = [:]
+    /// Last seen state per download; nil until the first snapshot, so existing history does not notify.
+    private var lastStates: [UUID: DownloadState]?
+    /// Called when a download finishes or fails while the app is watching.
+    public var onEvent: (@MainActor (DownloadEvent) -> Void)?
 
     public init(agent: (any AgentCommanding)? = nil) {
         self.agent = agent
@@ -128,6 +137,13 @@ public final class DownloadsModel {
     }
 
     func apply(_ downloads: [Download], now: ContinuousClock.Instant) {
+        if let lastStates {
+            for download in downloads where lastStates[download.id] != download.state {
+                if download.state == .completed { onEvent?(.completed(download)) }
+                if download.state == .failed { onEvent?(.failed(download)) }
+            }
+        }
+        lastStates = Dictionary(uniqueKeysWithValues: downloads.map { ($0.id, $0.state) })
         let next = downloads.map { DownloadItem(download: $0, speed: measureSpeed($0, now: now)) }
         let ids = Set(next.map(\.id))
         samples = samples.filter { ids.contains($0.key) }
