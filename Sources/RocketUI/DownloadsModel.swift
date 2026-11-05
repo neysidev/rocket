@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import RocketCore
 import RocketIPC
+import RocketNetworking
 
 /// One row's worth of data: the agent's download plus speed measured on this side.
 public struct DownloadItem: Identifiable, Equatable, Sendable {
@@ -393,6 +394,7 @@ public final class DownloadsModel {
         adding = AddDownloadsModel(
             text: links.map(\.absoluteString).joined(separator: "\n"), folder: folder ?? settings.folder,
             connections: settings.connections, queueID: currentQueueID, queues: queues, agent: agent,
+            transport: URLSessionHTTPTransport(proxy: { RocketDefaults().proxy }),
             existing: items.map(\.download), defaultResolution: settings.defaultDuplicateResolution
         )
     }

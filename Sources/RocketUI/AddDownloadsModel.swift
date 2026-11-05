@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import RocketCore
 import RocketIPC
+import RocketNetworking
 
 /// Pulls http(s) links out of pasted text, dropped `.txt` lists or anything else (FR-ADD-01). Keeps order, drops repeats.
 public enum LinkExtractor {
@@ -67,6 +68,7 @@ public final class AddDownloadsModel: Identifiable {
     public private(set) var revealed: [UUID] = []
 
     private let agent: (any AgentCommanding)?
+    private let transport: any HTTPTransport
     private let existing: [Download]
     /// The folder and queue the sheet opened with; unchanged choices are left to rules and defaults.
     private let initialFolder: URL
@@ -76,7 +78,9 @@ public final class AddDownloadsModel: Identifiable {
 
     public init(
         text: String = "", folder: URL, connections: Int = 8, queueID: String = DownloadQueue.defaultID,
-        queues: [DownloadQueue] = [], agent: (any AgentCommanding)?, existing: [Download],
+        queues: [DownloadQueue] = [], agent: (any AgentCommanding)?,
+        transport: any HTTPTransport = URLSessionHTTPTransport(),
+        existing: [Download],
         defaultResolution: Resolution = RocketDefaults().defaultDuplicateResolution,
         fileExists: @escaping (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
     ) {
@@ -88,6 +92,7 @@ public final class AddDownloadsModel: Identifiable {
         self.queueID = queueID
         self.queues = queues
         self.agent = agent
+        self.transport = transport
         self.existing = existing.filter { $0.state != .cancelled }
         self.fileExists = fileExists
         self.defaultResolution = defaultResolution
@@ -113,26 +118,20 @@ public final class AddDownloadsModel: Identifiable {
         }
     }
 
-    /// Probes every link through the agent, in parallel.
+    /// Checks every link over HTTP in parallel (same probe logic as the agent, without XPC).
     public func review() async {
         candidates = links.map {
             Candidate(url: $0, fileName: FileNameSanitizer.sanitize($0.lastPathComponent), resolution: defaultResolution)
         }
         phase = .review
-        guard let agent else {
-            for index in candidates.indices { candidates[index].error = String(localized: "Rocket's background agent is not running.") }
-            return
-        }
         let requestContext = requestContext
+        let transport = self.transport
         await withTaskGroup(of: (UUID, Result<RemoteFileInfo, any Error>).self) { group in
             for candidate in candidates {
                 group.addTask {
                     do {
-                        switch try await agent.send(.probe(url: candidate.url, context: requestContext)) {
-                        case .info(let info): return (candidate.id, .success(info))
-                        case .error(let message): return (candidate.id, .failure(AddError(message: message)))
-                        default: return (candidate.id, .failure(AddError(message: "Unexpected reply")))
-                        }
+                        let info = try await transport.probe(candidate.url, context: requestContext)
+                        return (candidate.id, .success(info))
                     } catch {
                         return (candidate.id, .failure(error))
                     }
@@ -148,10 +147,16 @@ public final class AddDownloadsModel: Identifiable {
                         candidates[index].resolution = resolutions(for: conflict)[0]
                     }
                 case .failure(let error):
-                    candidates[index].error = (error as? AddError)?.message ?? error.localizedDescription
+                    candidates[index].error = Self.message(for: error)
                 }
             }
         }
+    }
+
+    private static func message(for error: any Error) -> String {
+        if let error = error as? DownloadError { return error.userMessage }
+        if let error = error as? LocalizedError, let description = error.errorDescription { return description }
+        return error.localizedDescription
     }
 
     /// Adds every candidate the user kept. Returns the IDs of new and "show existing" downloads.
@@ -179,10 +184,14 @@ public final class AddDownloadsModel: Identifiable {
                 queueID: queueID == initialQueueID && queueID == DownloadQueue.defaultID ? nil : queueID,
                 context: requestContext
             )
-            switch try? await agent.send(command) {
-            case .download(let download)?: ids.append(download.id)
-            case .error(let message)?: candidates[index].error = message
-            default: candidates[index].error = String(localized: "Could not reach the background agent.")
+            do {
+                switch try await agent.send(command) {
+                case .download(let download): ids.append(download.id)
+                case .error(let message): candidates[index].error = message
+                default: candidates[index].error = String(localized: "Could not reach the background agent.")
+                }
+            } catch {
+                candidates[index].error = Self.message(for: error)
             }
         }
         revealed = ids

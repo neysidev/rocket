@@ -74,7 +74,8 @@ import Testing
     @Test func addSheetRenders() async throws {
         let model = AddDownloadsModel(
             text: "https://releases.example.com/ubuntu-24.04-desktop-amd64.iso\nhttps://broken.example/x.zip\nhttps://example.com/paper.pdf",
-            folder: URL(filePath: "/Users/me/Downloads", directoryHint: .isDirectory), agent: ProbingAgent(), existing: [],
+            folder: URL(filePath: "/Users/me/Downloads", directoryHint: .isDirectory), agent: ProbingAgent(),
+            transport: TestProbeTransport(), existing: [],
             fileExists: { $0.lastPathComponent == "paper.pdf" }
         )
         await model.review()

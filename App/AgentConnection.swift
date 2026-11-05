@@ -14,7 +14,7 @@ final class AgentConnection {
     }
 
     private(set) var status: Status = .connecting
-    private(set) var client: AgentClient?
+    private(set) var client: ReconnectingAgentClient?
     private let service = SMAppService.agent(plistName: "io.github.neysidev.rocket.agent.plist")
 
     func connect() async {
@@ -34,7 +34,7 @@ final class AgentConnection {
         }
         #endif
         do {
-            let client = try self.client ?? AgentClient()
+            let client = self.client ?? ReconnectingAgentClient()
             self.client = client
             if case .error(let message) = try await client.send(.snapshot) {
                 status = .unavailable(message)

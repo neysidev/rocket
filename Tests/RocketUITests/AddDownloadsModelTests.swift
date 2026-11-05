@@ -4,16 +4,26 @@ import RocketIPC
 @testable import RocketUI
 import Testing
 
-/// Answers probes with fixed info and records adds.
+/// Fixed probe results for add-sheet tests (no network).
+struct TestProbeTransport: HTTPTransport, Sendable {
+    func probe(_ url: URL, context: RequestContext?) async throws -> RemoteFileInfo {
+        if url.host == "broken.example" { throw DownloadError.http(status: 404) }
+        return RemoteFileInfo(
+            finalURL: url, totalBytes: 1_000_000, acceptsRanges: true, suggestedFileName: url.lastPathComponent
+        )
+    }
+
+    func fetch(_ url: URL, range: ByteRange?, ifRange: String?, context: RequestContext?) async throws -> TransferResponse {
+        throw DownloadError.invalidURL
+    }
+}
+
+/// Records adds sent to the agent.
 actor ProbingAgent: AgentCommanding {
     private(set) var added: [Command] = []
 
     func send(_ command: Command) -> Reply {
         switch command {
-        case .probe(let url, _) where url.host == "broken.example":
-            return .error("The file was not found on the server (404).")
-        case .probe(let url, _):
-            return .info(RemoteFileInfo(finalURL: url, totalBytes: 1_000_000, acceptsRanges: true, suggestedFileName: url.lastPathComponent))
         case let .add(url, directory, fileName, _, _, _, _, _):
             added.append(command)
             return .download(Download(url: url, destinationPath: directory ?? "/", fileName: fileName ?? "x"))
@@ -46,7 +56,7 @@ actor ProbingAgent: AgentCommanding {
     @Test func reviewProbesEveryLinkAndReportsErrors() async {
         let model = AddDownloadsModel(
             text: "https://example.com/ubuntu.iso\nhttps://broken.example/x.zip", folder: folder,
-            agent: ProbingAgent(), existing: [], fileExists: { _ in false }
+            agent: ProbingAgent(), transport: TestProbeTransport(), existing: [], fileExists: { _ in false }
         )
         await model.review()
         #expect(model.phase == .review)
@@ -58,7 +68,10 @@ actor ProbingAgent: AgentCommanding {
     @Test func duplicateURLDefaultsToShowingExisting() async {
         let existing = Download(url: URL(string: "https://example.com/ubuntu.iso")!, destinationPath: folder.path, fileName: "ubuntu.iso")
         let agent = ProbingAgent()
-        let model = AddDownloadsModel(text: existing.url.absoluteString, folder: folder, agent: agent, existing: [existing], fileExists: { _ in false })
+        let model = AddDownloadsModel(
+            text: existing.url.absoluteString, folder: folder, agent: agent, transport: TestProbeTransport(),
+            existing: [existing], fileExists: { _ in false }
+        )
         await model.review()
         #expect(model.conflict(for: model.candidates[0]) == .inList(existing.id))
         #expect(model.candidates[0].resolution == .showExisting)
@@ -70,8 +83,8 @@ actor ProbingAgent: AgentCommanding {
         let taken: Set<String> = ["ubuntu.iso", "ubuntu 2.iso"]
         let agent = ProbingAgent()
         let model = AddDownloadsModel(
-            text: "https://example.com/ubuntu.iso", folder: folder, agent: agent, existing: [],
-            fileExists: { taken.contains($0.lastPathComponent) }
+            text: "https://example.com/ubuntu.iso", folder: folder, agent: agent, transport: TestProbeTransport(),
+            existing: [], fileExists: { taken.contains($0.lastPathComponent) }
         )
         await model.review()
         #expect(model.conflict(for: model.candidates[0]) == .fileExists)
@@ -83,7 +96,10 @@ actor ProbingAgent: AgentCommanding {
 
     @Test func skippedLinksAreNotAdded() async {
         let agent = ProbingAgent()
-        let model = AddDownloadsModel(text: "https://example.com/a.iso", folder: folder, agent: agent, existing: [], fileExists: { _ in true })
+        let model = AddDownloadsModel(
+            text: "https://example.com/a.iso", folder: folder, agent: agent, transport: TestProbeTransport(),
+            existing: [], fileExists: { _ in true }
+        )
         await model.review()
         model.candidates[0].resolution = .skip
         #expect(model.startCount == 0)

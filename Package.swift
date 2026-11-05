@@ -35,7 +35,7 @@ let package = Package(
         // App screens and their view models; the app target is only the composition root.
         .target(
             name: "RocketUI",
-            dependencies: ["RocketCore", "RocketIPC", "RocketDesign"],
+            dependencies: ["RocketCore", "RocketIPC", "RocketNetworking", "RocketDesign"],
             resources: [.process("Resources")]
         ),
 
