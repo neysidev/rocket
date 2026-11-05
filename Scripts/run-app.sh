@@ -9,6 +9,7 @@ if [ -z "$DEVELOPER_DIR" ] && [ -d /Applications/Xcode.app ]; then
 fi
 
 command -v xcodegen >/dev/null || { echo "Install XcodeGen: brew install xcodegen" >&2; exit 1; }
+mkdir -p .build/generated   # XcodeGen writes rocketd's Info.plist here
 xcodegen generate --quiet
 
 xcodebuild -project Rocket.xcodeproj -scheme Rocket -configuration Debug \

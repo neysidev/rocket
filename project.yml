@@ -73,11 +73,19 @@ targets:
     platform: macOS
     sources: [Agent]
     excludes: ["*.plist"]
+    # The agent downloads whatever links the user gives it, including plain http on any host, so App Transport
+    # Security must allow arbitrary loads here (system TLS validation still applies to every https request).
+    info:
+      path: .build/generated/rocketd-Info.plist
+      properties:
+        CFBundleIdentifier: io.github.neysidev.rocket.agent
+        CFBundleName: rocketd
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
     settings:
       base:
         PRODUCT_NAME: rocketd
         PRODUCT_BUNDLE_IDENTIFIER: io.github.neysidev.rocket.agent
-        GENERATE_INFOPLIST_FILE: YES
         CREATE_INFOPLIST_SECTION_IN_BINARY: YES
         SKIP_INSTALL: YES
     dependencies:

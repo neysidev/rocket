@@ -118,11 +118,15 @@ public final class RocketTestServer: Sendable {
     private static func respond(_ connection: NWConnection, head: String, queue: DispatchQueue, counts: OSAllocatedUnfairLock<State>) {
         let lines = head.components(separatedBy: "\r\n")
         let requestLine = lines[0].split(separator: " ")
-        guard requestLine.count >= 2, let components = URLComponents(string: "http://x\(requestLine[1])") else {
-            return send(connection, status: 400, headers: [:])
-        }
+        guard requestLine.count >= 2 else { return send(connection, status: 400, headers: [:]) }
         let method = String(requestLine[0])
-        let target = String(requestLine[1])
+        // Acting as an HTTP proxy: absolute-form "GET http://host/path" → "/path".
+        let target: String = {
+            let raw = String(requestLine[1])
+            guard raw.hasPrefix("http://"), let absolute = URLComponents(string: raw) else { return raw }
+            return absolute.percentEncodedPath + (absolute.percentEncodedQuery.map { "?" + $0 } ?? "")
+        }()
+        guard let components = URLComponents(string: "http://x\(target)") else { return send(connection, status: 400, headers: [:]) }
         var headers: [String: String] = [:]
         for line in lines.dropFirst() {
             guard let colon = line.firstIndex(of: ":") else { continue }

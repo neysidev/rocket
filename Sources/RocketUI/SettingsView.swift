@@ -17,6 +17,8 @@ public final class AppSettings {
     public var globalSpeedLimit: Int64?
     public var sleepPrevention: SleepPrevention { didSet { defaults.sleepPrevention = sleepPrevention } }
     public var autoSort: Bool { didSet { defaults.autoSort = autoSort } }
+    /// The agent reads it before each request.
+    public var proxy: ProxySettings { didSet { defaults.proxy = proxy } }
     public private(set) var launchAtLogin = false
     public private(set) var launchAtLoginError: String?
 
@@ -28,6 +30,7 @@ public final class AppSettings {
         globalSpeedLimit = defaults.globalSpeedLimit
         sleepPrevention = defaults.sleepPrevention
         autoSort = defaults.autoSort
+        proxy = defaults.proxy
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
@@ -83,6 +86,20 @@ struct GeneralSettings: View {
                 Text("More connections are faster on servers that allow them. Rocket lowers the count automatically when a server pushes back.")
                     .font(.rocketCaption)
                     .foregroundStyle(RocketColor.textSecondary)
+            }
+            Section("Network") {
+                Picker("Proxy", selection: $settings.proxy.kind) {
+                    ForEach(ProxySettings.Kind.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                if settings.proxy.kind != .system {
+                    TextField("Server", text: $settings.proxy.host, prompt: Text("proxy.example.com"))
+                    TextField("Port", value: $settings.proxy.port, format: .number.grouping(.never), prompt: Text("8080"))
+                    if !settings.proxy.isCustom {
+                        Text("Enter a server and a port from 1 to 65535. Until then Rocket uses the system settings.")
+                            .font(.rocketCaption)
+                            .foregroundStyle(RocketColor.warning)
+                    }
+                }
             }
             Section("Power") {
                 Picker("Keep the Mac awake while downloading", selection: $settings.sleepPrevention) {

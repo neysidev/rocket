@@ -1,16 +1,54 @@
 import Foundation
+import os
 import RocketCore
 
 /// URLSession adapter for `HTTPTransport`. Bodies arrive as `URLSessionDataDelegate` chunks, never byte by byte.
 public final class URLSessionHTTPTransport: HTTPTransport {
-    private let session: URLSession
+    private let configuration: URLSessionConfiguration
+    private let proxy: @Sendable () -> ProxySettings
+    /// One session per proxy setting; a changed setting applies to the next request. Lock: read from any task.
+    private let current: OSAllocatedUnfairLock<(proxy: ProxySettings, session: URLSession)>
 
-    public init(configuration: URLSessionConfiguration = .rocketDefault) {
-        session = URLSession(configuration: configuration)
+    public init(configuration: URLSessionConfiguration = .rocketDefault, proxy: @escaping @Sendable () -> ProxySettings = { .system }) {
+        self.configuration = configuration
+        self.proxy = proxy
+        let initial = proxy()
+        current = OSAllocatedUnfairLock(initialState: (initial, Self.session(configuration, initial)))
     }
 
     deinit {
-        session.invalidateAndCancel()
+        current.withLock { $0.session.invalidateAndCancel() }
+    }
+
+    private var session: URLSession {
+        let wanted = proxy()
+        return current.withLock { state in
+            guard state.proxy != wanted else { return state.session }
+            state.session.finishTasksAndInvalidate() // running transfers finish on the old proxy
+            state = (wanted, Self.session(configuration, wanted))
+            return state.session
+        }
+    }
+
+    private static func session(_ base: URLSessionConfiguration, _ proxy: ProxySettings) -> URLSession {
+        let configuration = base.copy() as! URLSessionConfiguration // swiftlint:disable:this force_cast
+        if proxy.isCustom {
+            let host = proxy.host.trimmingCharacters(in: .whitespaces)
+            switch proxy.kind {
+            case .http:
+                configuration.connectionProxyDictionary = [
+                    kCFNetworkProxiesHTTPEnable: true, kCFNetworkProxiesHTTPProxy: host, kCFNetworkProxiesHTTPPort: proxy.port,
+                    kCFNetworkProxiesHTTPSEnable: true, kCFNetworkProxiesHTTPSProxy: host, kCFNetworkProxiesHTTPSPort: proxy.port,
+                ] as [AnyHashable: Any]
+            case .socks5:
+                configuration.connectionProxyDictionary = [
+                    kCFNetworkProxiesSOCKSEnable: true, kCFNetworkProxiesSOCKSProxy: host, kCFNetworkProxiesSOCKSPort: proxy.port,
+                ] as [AnyHashable: Any]
+            case .system:
+                break
+            }
+        }
+        return URLSession(configuration: configuration)
     }
 
     public func probe(_ url: URL, context: RequestContext?) async throws -> RemoteFileInfo {

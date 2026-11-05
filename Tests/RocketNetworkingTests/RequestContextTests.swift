@@ -43,3 +43,32 @@ import Testing
         #expect(RequestContext.headers(fromLines: ["X-A: 1", "junk", " X-B :two words "]) == ["X-A": "1", "X-B": "two words"])
     }
 }
+
+@Suite struct ProxyTests {
+    final class Setting: @unchecked Sendable {
+        var value = ProxySettings.system
+    }
+
+    @Test func customHTTPProxyIsUsedAndCanChangeLive() async throws {
+        let proxyServer = try await RocketTestServer()
+        let setting = Setting()
+        let transport = URLSessionHTTPTransport(proxy: { setting.value })
+        // An unresolvable host: only reachable through the proxy.
+        let url = URL(string: "http://rocket-proxy-test.invalid/file/4321")!
+
+        await #expect(throws: DownloadError.self) { _ = try await transport.probe(url) }
+
+        setting.value = ProxySettings(kind: .http, host: "127.0.0.1", port: Int(proxyServer.port))
+        #expect(try await transport.probe(url).totalBytes == 4321)
+        #expect(proxyServer.requestCount("/file/4321") == 1)
+
+        setting.value = .system
+        await #expect(throws: DownloadError.self) { _ = try await transport.probe(url) }
+    }
+
+    @Test func incompleteProxyFallsBackToSystem() {
+        #expect(!ProxySettings(kind: .http, host: "", port: 8080).isCustom)
+        #expect(!ProxySettings(kind: .socks5, host: "h", port: 0).isCustom)
+        #expect(ProxySettings(kind: .socks5, host: "h", port: 1080).isCustom)
+    }
+}

@@ -16,7 +16,7 @@ do {
     scheduler = DownloadScheduler(
         repository: repository, checkpoints: repository, queues: repository, rules: repository,
         contexts: GRDBRequestContextStore(db: database),
-        transport: URLSessionHTTPTransport(),
+        transport: URLSessionHTTPTransport(proxy: { RocketDefaults().proxy }),
         runPostAction: { await PostQueueActions.run($0) },
         onActivityChange: { await SleepAssertion.shared.update(downloading: $0) }
     )

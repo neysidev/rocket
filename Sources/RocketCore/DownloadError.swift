@@ -60,7 +60,16 @@ public extension DownloadError {
             case 429, 503: String(localized: "The server is busy (\(status)).")
             default: String(localized: "The server responded with error \(status).")
             }
-        case .network: String(localized: "The network connection was lost.")
+        case .network(let code):
+            switch code {
+            case -1003, -1006: String(localized: "The server could not be found.")
+            case -1001: String(localized: "The connection timed out.")
+            case -1009: String(localized: "You're offline.")
+            case -1004: String(localized: "Could not connect to the server.")
+            case -1200, -1201, -1202, -1203, -1204, -1206: String(localized: "The server's secure connection could not be verified.")
+            case -1022: String(localized: "The connection was blocked by App Transport Security.")
+            default: String(localized: "The network connection was lost.")
+            }
         case .remoteFileChanged: String(localized: "The file changed on the server, so the download restarted.")
         case .invalidRangeResponse: String(localized: "The server sent unexpected data.")
         case .sizeMismatch: String(localized: "The downloaded file has the wrong size.")
