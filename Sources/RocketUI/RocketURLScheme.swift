@@ -16,4 +16,13 @@ public struct RocketURLRequest: Equatable, Sendable {
         let path = items.first(where: { $0.name == "dir" })?.value.map { ($0 as NSString).expandingTildeInPath }
         folder = path.flatMap { $0.hasPrefix("/") ? URL(filePath: $0, directoryHint: .isDirectory) : nil }
     }
+
+    /// The `rocket://add` link that opens the add sheet with `links`.
+    public static func url(adding links: [URL]) -> URL {
+        var components = URLComponents()
+        components.scheme = "rocket"
+        components.host = "add"
+        components.queryItems = links.map { URLQueryItem(name: "url", value: $0.absoluteString) }
+        return components.url!
+    }
 }

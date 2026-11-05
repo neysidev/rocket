@@ -12,6 +12,8 @@ struct RocketApp: App {
                 .environment(app.agent)
                 .frame(minWidth: 760, minHeight: 480)
                 .onChange(of: app.agent.status) { app.downloads.agent = app.agent.client }
+                // External links go to the open window instead of opening another one.
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
                 .onOpenURL { url in
                     // rocket://add?url=… opens the add sheet for review; nothing starts without the user.
                     guard let request = RocketURLRequest(url) else { return }
@@ -44,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let downloads = DownloadsModel()
     let updater = Updater()
     private var notifier: Notifier?
+    private var watcher: ClipboardWatcher?
     private let dock = DockProgress()
     private var polling: Task<Void, Never>?
 
@@ -51,6 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = downloads.settings
         let notifier = Notifier(downloads: downloads, isEnabled: { settings.notificationsEnabled })
         self.notifier = notifier
+        let watcher = ClipboardWatcher(extensions: { settings.clipboardExtensionSet }, offer: { notifier.offer(copied: $0) })
+        self.watcher = watcher
+        settings.onWatchClipboardChange = { watcher.setEnabled($0) }
+        watcher.setEnabled(settings.watchClipboard)
         downloads.onEvent = { notifier.post($0) }
         downloads.onUpdate = { [dock, downloads] in
             dock.update(count: downloads.transferringCount + downloads.queuedCount, fraction: downloads.overallFraction,

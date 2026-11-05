@@ -20,6 +20,17 @@ public final class AppSettings {
     public var showDockProgress: Bool { didSet { defaults.showDockProgress = showDockProgress } }
     /// The agent reads it before each request.
     public var proxy: ProxySettings { didSet { defaults.proxy = proxy } }
+    public var watchClipboard: Bool {
+        didSet {
+            defaults.watchClipboard = watchClipboard
+            onWatchClipboardChange?(watchClipboard)
+        }
+    }
+    /// Comma-separated, as typed; saved as a clean list.
+    public var clipboardExtensions: String { didSet { defaults.clipboardExtensions = Self.extensions(clipboardExtensions) } }
+    /// The app starts or stops the clipboard watcher here.
+    public var onWatchClipboardChange: ((Bool) -> Void)?
+    public var clipboardExtensionSet: Set<String> { Set(Self.extensions(clipboardExtensions)) }
     public private(set) var launchAtLogin = false
     public private(set) var launchAtLoginError: String?
 
@@ -33,7 +44,14 @@ public final class AppSettings {
         autoSort = defaults.autoSort
         showDockProgress = defaults.showDockProgress
         proxy = defaults.proxy
+        watchClipboard = defaults.watchClipboard
+        clipboardExtensions = defaults.clipboardExtensions.joined(separator: ", ")
         launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    static func extensions(_ text: String) -> [String] {
+        text.split(whereSeparator: { $0 == "," || $0 == " " }).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased() }
+            .filter { !$0.isEmpty }
     }
 
     public func setLaunchAtLogin(_ enabled: Bool) {
@@ -106,6 +124,16 @@ struct GeneralSettings: View {
                             .foregroundStyle(RocketColor.warning)
                     }
                 }
+            }
+            Section("Clipboard") {
+                Toggle("Offer download links I copy", isOn: $settings.watchClipboard)
+                if settings.watchClipboard {
+                    TextField("File types", text: $settings.clipboardExtensions, prompt: Text("zip, dmg, iso"), axis: .vertical)
+                        .lineLimit(1...3)
+                }
+                Text("Rocket checks the clipboard once a second while this is on and never reads it otherwise.")
+                    .font(.rocketCaption)
+                    .foregroundStyle(RocketColor.textSecondary)
             }
             Section("Power") {
                 Picker("Keep the Mac awake while downloading", selection: $settings.sleepPrevention) {

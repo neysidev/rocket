@@ -14,7 +14,15 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
         static let sleepPrevention = "sleepPrevention"
         static let autoSort = "autoSortByType"
         static let dockProgress = "showDockProgress"
+        static let watchClipboard = "watchClipboard"
+        static let clipboardExtensions = "clipboardExtensions"
     }
+
+    /// File types the clipboard watcher offers by default (FR-INT-03).
+    public static let defaultClipboardExtensions = [
+        "zip", "dmg", "pkg", "iso", "img", "7z", "rar", "gz", "xz", "tar", "bz2", "xip", "ipsw",
+        "mp4", "mkv", "mov", "avi", "webm", "mp3", "flac", "wav", "m4a", "pdf", "epub", "exe", "msi", "apk", "bin",
+    ]
 
     private let store: UserDefaults
 
@@ -61,6 +69,18 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
     public var showDockProgress: Bool {
         get { store.object(forKey: Key.dockProgress) as? Bool ?? true }
         nonmutating set { store.set(newValue, forKey: Key.dockProgress) }
+    }
+
+    /// Offer copied download links (FR-INT-03). Off until the user opts in.
+    public var watchClipboard: Bool {
+        get { store.bool(forKey: Key.watchClipboard) }
+        nonmutating set { store.set(newValue, forKey: Key.watchClipboard) }
+    }
+
+    /// Lowercase extensions without dots.
+    public var clipboardExtensions: [String] {
+        get { store.stringArray(forKey: Key.clipboardExtensions) ?? Self.defaultClipboardExtensions }
+        nonmutating set { store.set(newValue, forKey: Key.clipboardExtensions) }
     }
 
     public var notificationsEnabled: Bool {

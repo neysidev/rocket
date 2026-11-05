@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import os
 import RocketCore
@@ -9,12 +10,14 @@ public final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     enum Category: String {
         case completed = "download.completed"
         case failed = "download.failed"
+        case copiedLinks = "clipboard.links"
     }
 
     enum Action: String {
         case open = "download.open"
         case reveal = "download.reveal"
         case retry = "download.retry"
+        case review = "clipboard.review"
     }
 
     private let center: UNUserNotificationCenter
@@ -37,12 +40,32 @@ public final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(identifier: Category.failed.rawValue, actions: [
                 UNNotificationAction(identifier: Action.retry.rawValue, title: String(localized: "Retry")),
             ], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Category.copiedLinks.rawValue, actions: [
+                UNNotificationAction(identifier: Action.review.rawValue, title: String(localized: "Download…"), options: .foreground),
+            ], intentIdentifiers: []),
         ])
     }
 
     public func post(_ event: DownloadEvent) {
         guard isEnabled() else { return }
-        let request = Self.request(for: event)
+        deliver(Self.request(for: event))
+    }
+
+    /// The clipboard watcher's prompt (FR-INT-03). Its own opt-in, so the completion toggle does not apply.
+    public func offer(copied links: [URL]) {
+        deliver(Self.request(offering: links))
+    }
+
+    static func request(offering links: [URL]) -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = links.count == 1 ? String(localized: "Download copied link?") : String(localized: "Download \(links.count) copied links?")
+        content.body = links.map { $0.lastPathComponent }.joined(separator: ", ")
+        content.categoryIdentifier = Category.copiedLinks.rawValue
+        content.userInfo = ["links": links.map(\.absoluteString)]
+        return UNNotificationRequest(identifier: "clipboard", content: content, trigger: nil)
+    }
+
+    private func deliver(_ request: UNNotificationRequest) {
         log.notice("Notifying \(request.content.categoryIdentifier, privacy: .public)")
         Task {
             let granted: Bool
@@ -99,6 +122,13 @@ public final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     public nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let action = response.actionIdentifier
+        if let links = response.notification.request.content.userInfo["links"] as? [String] {
+            // Through rocket://add, so the add sheet opens in the main window (creating it if it was closed).
+            guard action != UNNotificationDismissActionIdentifier else { return }
+            let urls = links.compactMap(URL.init(string:))
+            await MainActor.run { _ = NSWorkspace.shared.open(RocketURLRequest.url(adding: urls)) }
+            return
+        }
         guard let id = (response.notification.request.content.userInfo["id"] as? String).flatMap(UUID.init) else { return }
         await handle(action: action, id: id)
     }
@@ -108,6 +138,7 @@ public final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         case .open: downloads.open(id)
         case .reveal: downloads.reveal([id])
         case .retry: await downloads.resume([id])
+        case .review: break // clipboard offers carry links, not an id; handled above
         case nil: // clicked the notification itself
             downloads.filter = .all
             downloads.selection = [id]
