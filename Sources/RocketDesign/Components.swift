@@ -30,21 +30,56 @@ public struct RocketProgressBar: View {
     }
 }
 
-/// 28 pt rounded square with a monochrome type symbol.
+/// Rounded square with a monochrome type symbol (28 pt by default).
 public struct FileTile: View {
     let symbol: String
+    let size: CGFloat
 
-    public init(symbol: String) {
+    public init(symbol: String, size: CGFloat = RocketSize.fileTile) {
         self.symbol = symbol
+        self.size = size
     }
 
     public var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: size * 0.42, weight: .regular))
             .foregroundStyle(RocketColor.textSecondary)
-            .frame(width: RocketSize.fileTile, height: RocketSize.fileTile)
-            .background(RocketColor.control, in: RoundedRectangle(cornerRadius: RocketRadius.small))
+            .frame(width: size, height: size)
+            .background(RocketColor.control, in: RoundedRectangle(cornerRadius: size > RocketSize.fileTile ? RocketRadius.control : RocketRadius.small))
             .accessibilityHidden(true)
+    }
+}
+
+/// Capsule filter pill: subtle fill at rest, one step up when selected.
+public struct PillButtonStyle: ButtonStyle {
+    let selected: Bool
+
+    public init(selected: Bool) {
+        self.selected = selected
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        PillBody(configuration: configuration, selected: selected)
+    }
+
+    private struct PillBody: View {
+        let configuration: ButtonStyleConfiguration
+        let selected: Bool
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.rocketLabel)
+                .foregroundStyle(selected || hovering ? RocketColor.textPrimary : RocketColor.textSecondary)
+                .padding(.horizontal, RocketSpace.s4)
+                .frame(height: 26)
+                .background(selected ? RocketColor.fillSelected : hovering ? RocketColor.fillSubtle : RocketColor.fillSubtle.opacity(0.6), in: Capsule())
+                .contentShape(Capsule())
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .onHover { hovering = $0 }
+                .animation(RocketMotion.fast, value: hovering)
+                .animation(RocketMotion.fast, value: configuration.isPressed)
+        }
     }
 }
 

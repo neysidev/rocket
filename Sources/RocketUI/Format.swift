@@ -40,6 +40,23 @@ public enum Format {
         return String(localized: "\(text) left")
     }
 
+    /// Size line for the redesigned rows: "840 MB of 1.2 GB · 2 min left"; status lives on its own line.
+    public static func size(_ item: DownloadItem) -> String {
+        let download = item.download
+        let size = download.totalBytes.map(bytes)
+        let progress = size.map { "\(bytes(download.receivedBytes)) of \($0)" } ?? bytes(download.receivedBytes)
+        switch download.state {
+        case .downloading:
+            var parts = [progress]
+            if let left = item.secondsLeft { parts.append(timeLeft(left)) }
+            if let limit = download.speedLimit { parts.append(String(localized: "limit \(speed(Double(limit)))")) }
+            return parts.joined(separator: " · ")
+        case .queued, .probing: return size ?? String(localized: "Size unknown")
+        case .completed: return size ?? bytes(download.receivedBytes)
+        case .paused, .verifying, .failed, .cancelled: return progress
+        }
+    }
+
     /// The metadata line under a row's file name.
     public static func detail(_ item: DownloadItem) -> String {
         let download = item.download
@@ -82,13 +99,25 @@ public extension DownloadState {
 public extension FileCategory {
     var symbol: String {
         switch self {
-        case .video: "film"
-        case .archive: "archivebox"
+        case .video: "play.rectangle"
+        case .archive: "doc.zipper"
         case .document: "doc.text"
-        case .app: "app.dashed"
-        case .music: "music.note"
+        case .app: "shippingbox"
+        case .music: "waveform"
         case .image: "photo"
         case .other: "doc"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .video: String(localized: "Video")
+        case .archive: String(localized: "Archive")
+        case .document: String(localized: "Document")
+        case .app: String(localized: "App")
+        case .music: String(localized: "Audio")
+        case .image: String(localized: "Image")
+        case .other: String(localized: "Other")
         }
     }
 }

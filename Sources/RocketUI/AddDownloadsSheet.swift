@@ -151,7 +151,7 @@ private struct CandidateRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: RocketSpace.s4) {
-            FileTile(symbol: FileCategory(fileName: candidate.fileName).symbol)
+            FileTile(symbol: FileCategory(fileName: candidate.fileName, mimeType: candidate.info?.contentType).symbol)
             VStack(alignment: .leading, spacing: RocketSpace.s2) {
                 TextField("File name", text: $candidate.fileName)
                     .textFieldStyle(.plain)
@@ -187,7 +187,7 @@ private struct CandidateRow: View {
             HStack(spacing: RocketSpace.s2) {
                 Text(info.totalBytes.map(Format.bytes) ?? String(localized: "Size unknown"))
                 Text("·")
-                Text(info.contentType ?? FileCategory(fileName: candidate.fileName).rawValue.capitalized)
+                Text(info.contentType ?? FileCategory(fileName: candidate.fileName).title)
                 Text("·")
                 if info.acceptsRanges {
                     Text("Resumable")

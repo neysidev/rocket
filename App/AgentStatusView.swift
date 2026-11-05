@@ -6,6 +6,11 @@ struct AgentStatusView: View {
     @Environment(AgentConnection.self) private var agent
 
     var body: some View {
+        // The sidebar's activity line covers the healthy case; only problems get a row.
+        if agent.status != .live { status }
+    }
+
+    private var status: some View {
         HStack(spacing: RocketSpace.s2) {
             Image(systemName: symbol)
                 .foregroundStyle(color)

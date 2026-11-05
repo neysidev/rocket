@@ -27,6 +27,9 @@ public enum RocketColor {
     public static let cardSelected = dynamic("surface.cardSelected", dark: 0x2D3238, light: 0xFFFFFF)
     public static let control = dynamic("surface.control", dark: 0x2A2E34, light: 0xE6E8EB)
     public static let hairline = Color.primary.opacity(0.08)
+    /// Pill rest / hover fill and the selected pill or card.
+    public static let fillSubtle = Color.primary.opacity(0.05)
+    public static let fillSelected = Color.primary.opacity(0.12)
 
     public static let textPrimary = dynamic("text.primary", dark: 0xF3F4F6, light: 0x17191C)
     public static let textSecondary = dynamic("text.secondary", dark: 0xA1A7AF, light: 0x5F656D)
@@ -35,6 +38,8 @@ public enum RocketColor {
     public static let flame = dynamic("accent.flame", dark: 0xFFB23F, light: 0xF29D0B)
     public static let flameText = dynamic("accent.flameText", dark: 0xFFB23F, light: 0x9A5B00)
     public static let interactive = Color.accentColor
+    /// Main window accent: active progress, live numbers, selection tint.
+    public static let accent = dynamic("accent.blue", dark: 0x4C8DFF, light: 0x1F6FEB)
 
     public static let success = dynamic("status.success", dark: 0x6FCF8A, light: 0x23843E)
     public static let danger = dynamic("status.danger", dark: 0xFF6B63, light: 0xD7342B)
@@ -64,6 +69,8 @@ public enum RocketRadius {
 public enum RocketSize {
     public static let iconButton: CGFloat = 28
     public static let fileTile: CGFloat = 28
+    public static let fileTileRow: CGFloat = 40
+    public static let fileTileCard: CGFloat = 56
     public static let rowCompact: CGFloat = 36
     public static let row: CGFloat = 52
     public static let progressBarRow: CGFloat = 3

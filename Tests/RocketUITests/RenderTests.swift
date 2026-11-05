@@ -53,6 +53,31 @@ import Testing
         }
     }
 
+    @Test func gridCardsRender() throws {
+        let model = DownloadsModel()
+        let view = LazyVGrid(columns: Array(repeating: GridItem(.fixed(220), spacing: RocketSpace.s4), count: 3), spacing: RocketSpace.s4) {
+            ForEach(Self.items) { item in
+                DownloadCard(item: item, model: model, queuePosition: item.download.state == .queued ? 2 : nil,
+                             isSelected: item.download.state == .completed)
+            }
+        }
+        .padding(RocketSpace.s5)
+        .background(RocketColor.canvas)
+        .environment(\.colorScheme, .dark)
+
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        var image: CGImage?
+        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { image = renderer.cgImage }
+        let rendered = try #require(image)
+        #expect(rendered.width > 0)
+
+        if let dir = ProcessInfo.processInfo.environment["ROCKET_RENDER_DIR"] {
+            let rep = NSBitmapImageRep(cgImage: rendered)
+            try rep.representation(using: .png, properties: [:])!.write(to: URL(filePath: dir).appending(path: "cards.png"))
+        }
+    }
+
     @Test func addSheetRenders() async throws {
         let model = AddDownloadsModel(
             text: "https://releases.example.com/ubuntu-24.04-desktop-amd64.iso\nhttps://broken.example/x.zip\nhttps://example.com/paper.pdf",

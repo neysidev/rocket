@@ -245,3 +245,77 @@ private func download(_ name: String, _ state: DownloadState, received: Int64 = 
         #expect(model.visibleItems.map(\.download.fileName) == ["c.mov", "A.zip", "b.iso"])
     }
 }
+
+@MainActor
+@Suite struct RefinementTests {
+    @Test func queuedHasItsOwnFilterAndActiveExcludesIt() {
+        let model = DownloadsModel()
+        model.apply([download("a", .queued), download("b", .downloading), download("c", .paused)], now: .now)
+        #expect(model.count(.queued) == 1)
+        #expect(model.count(.active) == 2)
+        model.filter = .queued
+        #expect(model.visibleItems.map(\.download.fileName) == ["a"])
+    }
+
+    @Test func categorySizeAndDateCombineWithSearch() {
+        let model = DownloadsModel()
+        var old = download("old.mp4", .completed, total: 2_000_000_000)
+        old.createdAt = .now.addingTimeInterval(-40 * 86400)
+        model.apply([
+            download("clip.mp4", .completed, total: 2_000_000_000), download("small.mp4", .completed, total: 5_000_000),
+            download("notes.pdf", .completed, total: 2_000_000_000), old,
+        ], now: .now)
+        model.category = .video
+        #expect(model.visibleItems.count == 3)
+        model.sizeFilter = .huge
+        #expect(Set(model.visibleItems.map(\.download.fileName)) == ["clip.mp4", "old.mp4"])
+        model.dateFilter = .month
+        #expect(model.visibleItems.map(\.download.fileName) == ["clip.mp4"])
+        model.search = "nothing"
+        #expect(model.visibleItems.isEmpty)
+        #expect(model.hasRefinements)
+        model.clearRefinements()
+        model.search = ""
+        #expect(model.visibleItems.count == 4)
+        #expect(!model.hasRefinements)
+    }
+
+    @Test func oldestAndProgressSorts() {
+        let model = DownloadsModel()
+        // The agent sends newest first.
+        model.apply([download("new", .downloading, received: 10, total: 100), download("mid", .paused, received: 90, total: 100),
+                     download("old", .completed, received: 100, total: 100)], now: .now)
+        model.sort = .newest
+        #expect(model.visibleItems.map(\.download.fileName) == ["new", "mid", "old"])
+        model.sort = .oldest
+        #expect(model.visibleItems.map(\.download.fileName) == ["old", "mid", "new"])
+        model.sort = .progress
+        #expect(model.visibleItems.map(\.download.fileName) == ["old", "mid", "new"])
+    }
+
+    @Test func queuePositionsCountWaitingDownloadsPerQueue() {
+        let model = DownloadsModel()
+        func make(_ name: String, _ queue: String, _ state: DownloadState, _ position: Double) -> Download {
+            var d = download(name, state)
+            d.queueID = queue
+            d.position = position
+            return d
+        }
+        let items = [make("b", "night", .queued, 2), make("a", "night", .queued, 1), make("run", "night", .downloading, 0),
+                     make("x", "default", .queued, 5)]
+        model.apply(items, now: .now)
+        let positions = model.queuePositions
+        #expect(positions[items[1].id] == 1)
+        #expect(positions[items[0].id] == 2)
+        #expect(positions[items[3].id] == 1)
+        #expect(positions[items[2].id] == nil)
+    }
+
+    @Test func categoriesFromSystemTypesAndMIME() {
+        #expect(FileCategory(fileName: "song.wma") == .music) // not in the table; UTType knows it
+        #expect(FileCategory(fileName: "index.html") == .document)
+        #expect(FileCategory(fileName: "download", mimeType: "video/mp4") == .video)
+        #expect(FileCategory(fileName: "download", mimeType: "application/zip; charset=binary") == .archive)
+        #expect(FileCategory(fileName: "download", mimeType: "application/octet-stream") == .other)
+    }
+}

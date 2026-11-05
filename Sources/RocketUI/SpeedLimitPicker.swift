@@ -6,10 +6,13 @@ public struct SpeedLimitPicker: View {
     let title: LocalizedStringKey
     let current: Int64?
     let set: (Int64?) -> Void
+    /// Inline for menus; a pop-up button in forms.
+    let inline: Bool
 
-    public init(_ title: LocalizedStringKey = "Speed Limit", current: Int64?, set: @escaping (Int64?) -> Void) {
+    public init(_ title: LocalizedStringKey = "Speed Limit", current: Int64?, inline: Bool = true, set: @escaping (Int64?) -> Void) {
         self.title = title
         self.current = current
+        self.inline = inline
         self.set = set
     }
 
@@ -21,12 +24,20 @@ public struct SpeedLimitPicker: View {
                 Text(Format.speed(Double(rate))).tag(Int64?.some(rate))
             }
         }
-        .pickerStyle(.inline)
+        .modifier(PickerStyleModifier(inline: inline))
     }
 
     /// Presets, plus the current value if it was set elsewhere (e.g. `rocket limit 3M`).
     private var options: [Int64] {
         guard let current, !ByteRate.presets.contains(current) else { return ByteRate.presets }
         return (ByteRate.presets + [current]).sorted()
+    }
+}
+
+private struct PickerStyleModifier: ViewModifier {
+    let inline: Bool
+
+    func body(content: Content) -> some View {
+        if inline { content.pickerStyle(.inline) } else { content.pickerStyle(.menu) }
     }
 }

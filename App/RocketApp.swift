@@ -98,7 +98,14 @@ struct DownloadCommands: Commands {
             Button("New Download…") { downloads.beginAdding() }
                 .keyboardShortcut("n")
         }
+        CommandGroup(replacing: .textEditing) {
+            Button("Search Downloads") { downloads.isSearching = true }
+                .keyboardShortcut("f")
+        }
         CommandMenu("Download") {
+            Button("Show Details") { downloads.selection.first.map(downloads.showDetails) }
+                .keyboardShortcut("i")
+                .disabled(downloads.selection.count != 1)
             Button("Show in Finder") { downloads.reveal(downloads.selection) }
                 .keyboardShortcut("o")
                 .disabled(downloads.selection.isEmpty)
@@ -113,6 +120,11 @@ struct DownloadCommands: Commands {
                 .disabled(!downloads.hasFinished)
         }
         CommandGroup(after: .toolbar) {
+            Button("as List") { downloads.viewMode = .list }
+                .keyboardShortcut("1")
+            Button("as Grid") { downloads.viewMode = .grid }
+                .keyboardShortcut("2")
+            Divider()
             Picker("Sort By", selection: Binding(get: { downloads.sort }, set: { downloads.sort = $0 })) {
                 ForEach(DownloadSort.allCases) { Text($0.title).tag($0) }
             }

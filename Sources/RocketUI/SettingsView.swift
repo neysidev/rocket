@@ -78,7 +78,7 @@ public struct SettingsView: View {
 
     public var body: some View {
         TabView {
-            GeneralSettings(settings: model.settings, extra: extra)
+            GeneralSettings(settings: model.settings, extra: extra) { rate in Task { await model.setGlobalLimit(rate) } }
                 .tabItem { Label("General", systemImage: "gearshape") }
             RulesSettings(model: model)
                 .tabItem { Label("Rules", systemImage: "line.3.horizontal.decrease") }
@@ -90,6 +90,8 @@ public struct SettingsView: View {
 struct GeneralSettings: View {
     @Bindable var settings: AppSettings
     let extra: AnyView
+    /// Sends the global limit to the agent (applies live to running downloads).
+    let setSpeedLimit: (Int64?) -> Void
     @State private var choosingFolder = false
 
     var body: some View {
@@ -108,6 +110,12 @@ struct GeneralSettings: View {
                     ForEach([1, 2, 4, 8, 12, 16], id: \.self) { Text("\($0)").tag($0) }
                 }
                 Text("More connections are faster on servers that allow them. Rocket lowers the count automatically when a server pushes back.")
+                    .font(.rocketCaption)
+                    .foregroundStyle(RocketColor.textSecondary)
+            }
+            Section("Speed") {
+                SpeedLimitPicker("Limit all downloads", current: settings.globalSpeedLimit, inline: false, set: setSpeedLimit)
+                Text("Applies right away to every running download. Set per-download limits from a download's menu.")
                     .font(.rocketCaption)
                     .foregroundStyle(RocketColor.textSecondary)
             }

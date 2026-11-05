@@ -50,31 +50,95 @@ public enum DownloadEvent: Equatable, Sendable {
 
 /// History sort (FR-APP-07). Queue views always show run order.
 public enum DownloadSort: String, CaseIterable, Identifiable, Sendable {
-    case dateAdded, name, size, status
+    case newest, oldest, name, size, progress, status
 
     public var id: Self { self }
     public var title: String {
         switch self {
-        case .dateAdded: String(localized: "Date Added")
+        case .newest: String(localized: "Newest")
+        case .oldest: String(localized: "Oldest")
         case .name: String(localized: "Name")
         case .size: String(localized: "Size")
+        case .progress: String(localized: "Progress")
         case .status: String(localized: "Status")
         }
     }
 }
 
+/// Main window layout; persisted across launches.
+public enum DownloadViewMode: String, CaseIterable, Identifiable, Sendable {
+    case list, grid
+
+    public var id: Self { self }
+    public var title: String { self == .list ? String(localized: "List") : String(localized: "Grid") }
+    public var symbol: String { self == .list ? "list.bullet" : "square.grid.2x2" }
+}
+
+/// File size refinement shown as a removable chip.
+public enum SizeFilter: String, CaseIterable, Identifiable, Sendable {
+    case any, small, medium, large, huge
+
+    public var id: Self { self }
+    public var title: String {
+        switch self {
+        case .any: String(localized: "Any Size")
+        case .small: String(localized: "Under 10 MB")
+        case .medium: String(localized: "10 MB – 100 MB")
+        case .large: String(localized: "100 MB – 1 GB")
+        case .huge: String(localized: "Over 1 GB")
+        }
+    }
+
+    func includes(_ bytes: Int64?) -> Bool {
+        guard self != .any else { return true }
+        guard let bytes else { return false }
+        switch self {
+        case .any: return true
+        case .small: return bytes < 10_000_000
+        case .medium: return (10_000_000..<100_000_000).contains(bytes)
+        case .large: return (100_000_000..<1_000_000_000).contains(bytes)
+        case .huge: return bytes >= 1_000_000_000
+        }
+    }
+}
+
+/// Date-added refinement shown as a removable chip.
+public enum DateFilter: String, CaseIterable, Identifiable, Sendable {
+    case any, today, week, month
+
+    public var id: Self { self }
+    public var title: String {
+        switch self {
+        case .any: String(localized: "Any Time")
+        case .today: String(localized: "Today")
+        case .week: String(localized: "Past 7 Days")
+        case .month: String(localized: "Past 30 Days")
+        }
+    }
+
+    func includes(_ date: Date, now: Date = .now) -> Bool {
+        switch self {
+        case .any: true
+        case .today: Calendar.current.isDate(date, inSameDayAs: now)
+        case .week: now.timeIntervalSince(date) < 7 * 86400
+        case .month: now.timeIntervalSince(date) < 30 * 86400
+        }
+    }
+}
+
 public enum SidebarFilter: Identifiable, Hashable, Sendable {
-    case all, active, completed, failed
+    case all, active, queued, completed, failed
     case queue(String)
 
-    public static let statuses: [SidebarFilter] = [.all, .active, .completed, .failed]
+    public static let statuses: [SidebarFilter] = [.all, .active, .queued, .completed, .failed]
 
     public var id: Self { self }
 
     public var title: String {
         switch self {
-        case .all: String(localized: "All downloads")
+        case .all: String(localized: "All Downloads")
         case .active: String(localized: "Active")
+        case .queued: String(localized: "Queued")
         case .completed: String(localized: "Completed")
         case .failed: String(localized: "Failed")
         case .queue: String(localized: "Queue")
@@ -83,10 +147,11 @@ public enum SidebarFilter: Identifiable, Hashable, Sendable {
 
     public var symbol: String {
         switch self {
-        case .all: "tray.full"
-        case .active: "arrow.down.circle"
+        case .all: "tray.and.arrow.down"
+        case .active: "play"
+        case .queued: "clock"
         case .completed: "checkmark.circle"
-        case .failed: "exclamationmark.triangle"
+        case .failed: "exclamationmark.circle"
         case .queue: "list.bullet"
         }
     }
@@ -94,7 +159,9 @@ public enum SidebarFilter: Identifiable, Hashable, Sendable {
     public func includes(_ download: Download) -> Bool {
         switch self {
         case .all: true
-        case .active: download.state.isActive || download.state == .paused
+        // Running or paused; waiting downloads live under Queued.
+        case .active: [.probing, .downloading, .verifying, .paused].contains(download.state)
+        case .queued: download.state == .queued
         case .completed: download.state == .completed
         case .failed: download.state == .failed
         case .queue(let id): download.queueID == id && download.state != .cancelled
@@ -112,7 +179,10 @@ public final class DownloadsModel {
     public internal(set) var rules: [DownloadRule] = []
     /// Per-download speed samples for the last 60 s (5 Hz), for the detail view's chart.
     public private(set) var speedSamples: [UUID: [Double]] = [:]
-    public var showsInspector = false
+    /// Download whose details sheet is open.
+    public var detailsID: UUID?
+    /// The toolbar search field is expanded (⌘F).
+    public var isSearching = false
     /// Download whose link is being refreshed.
     public var refreshing: Download?
     /// Queue being edited (a new one has an unsaved id).
@@ -120,7 +190,14 @@ public final class DownloadsModel {
     private var polls = 0
     public var filter: SidebarFilter = .all
     public var search = ""
-    public var sort: DownloadSort = .dateAdded
+    public var sort: DownloadSort = .newest
+    /// Refinements on top of the sidebar filter and search.
+    public var category: FileCategory?
+    public var sizeFilter: SizeFilter = .any
+    public var dateFilter: DateFilter = .any
+    public var viewMode: DownloadViewMode = DownloadViewMode(rawValue: UserDefaults.standard.string(forKey: "viewMode") ?? "") ?? .list {
+        didSet { UserDefaults.standard.set(viewMode.rawValue, forKey: "viewMode") }
+    }
     /// Called after each snapshot that changed something (Dock tile).
     public var onUpdate: (@MainActor () -> Void)?
     public var selection: Set<UUID> = []
@@ -142,15 +219,21 @@ public final class DownloadsModel {
     }
 
     public var visibleItems: [DownloadItem] {
+        let now = Date.now
         let matching = items.filter { item in
             filter.includes(item.download)
+                && (category == nil || item.category == category)
+                && sizeFilter.includes(item.download.totalBytes)
+                && dateFilter.includes(item.download.createdAt, now: now)
                 && (search.isEmpty || item.download.fileName.localizedCaseInsensitiveContains(search)
                     || item.download.url.absoluteString.localizedCaseInsensitiveContains(search))
         }
-        // A queue shows its run order; everything else newest first.
+        // A queue shows its run order; everything else follows the chosen sort.
         if case .queue = filter { return matching.sorted { $0.download.position < $1.download.position } }
         switch sort {
-        case .dateAdded: return matching // agent sends newest first
+        case .newest: return matching // agent sends newest first
+        case .oldest: return matching.reversed()
+        case .progress: return matching.sorted { ($0.fraction ?? 0) > ($1.fraction ?? 0) }
         case .name: return matching.sorted { $0.download.fileName.localizedStandardCompare($1.download.fileName) == .orderedAscending }
         case .size: return matching.sorted { ($0.download.totalBytes ?? -1) > ($1.download.totalBytes ?? -1) }
         case .status:
@@ -158,6 +241,28 @@ public final class DownloadsModel {
             return matching.sorted { (order.firstIndex(of: $0.download.state) ?? 0) < (order.firstIndex(of: $1.download.state) ?? 0) }
         }
     }
+
+    public var hasRefinements: Bool { category != nil || sizeFilter != .any || dateFilter != .any }
+
+    public func clearRefinements() {
+        category = nil
+        sizeFilter = .any
+        dateFilter = .any
+    }
+
+    /// 1-based place in line for each waiting download, per queue.
+    public var queuePositions: [UUID: Int] {
+        var next: [String: Int] = [:]
+        var result: [UUID: Int] = [:]
+        for item in items.filter({ $0.download.state == .queued }).sorted(by: { $0.download.position < $1.download.position }) {
+            next[item.download.queueID, default: 0] += 1
+            result[item.id] = next[item.download.queueID]
+        }
+        return result
+    }
+
+    /// False until the first snapshot arrives from the agent.
+    public var hasLoaded: Bool { lastStates != nil }
 
     public func count(_ filter: SidebarFilter) -> Int {
         items.count { filter.includes($0.download) }
@@ -289,6 +394,11 @@ public final class DownloadsModel {
     // MARK: Commands
 
     public func download(_ id: UUID) -> Download? { items.first { $0.id == id }?.download }
+
+    public func showDetails(_ id: UUID) {
+        selection = [id]
+        detailsID = id
+    }
 
     public func pause(_ ids: some Sequence<UUID>) async {
         for id in ids where download(id)?.state.isActive == true { await run(.pause(id: id)) }
@@ -423,6 +533,11 @@ public final class DownloadsModel {
     public var hasFinished: Bool { items.contains { [.completed, .cancelled].contains($0.download.state) } }
 
     public func pauseAll() async { await pause(items.map(\.id)) }
+    public func pauseQueue(_ id: String) async { await pause(items.filter { $0.download.queueID == id }.map(\.id)) }
+    public func resumeQueue(_ id: String) async {
+        await resume(items.filter { $0.download.queueID == id && $0.download.state == .paused }.map(\.id))
+    }
+    public func queueIsRunning(_ id: String) -> Bool { items.contains { $0.download.queueID == id && $0.download.state.isActive } }
     public func resumeAll() async { await resume(items.filter { $0.download.state == .paused }.map(\.id)) }
 
     public func reveal(_ ids: some Sequence<UUID>) {

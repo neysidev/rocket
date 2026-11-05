@@ -1,8 +1,9 @@
+import RocketCore
 import RocketDesign
 import RocketUI
 import SwiftUI
 
-/// Sidebar (status filters) → download list. The inspector arrives with FR-APP-02.
+/// Sidebar (status filters and queues) → download list or grid; details open in a sheet.
 struct MainWindow: View {
     @Bindable var downloads: DownloadsModel
 
@@ -12,61 +13,66 @@ struct MainWindow: View {
                 .navigationSplitViewColumnWidth(RocketSize.sidebarWidth)
         } detail: {
             DownloadListView(model: downloads)
-                .inspector(isPresented: $downloads.showsInspector) {
-                    Group {
-                        if downloads.selection.count == 1, let id = downloads.selection.first {
-                            DownloadDetailView(model: downloads, id: id)
-                        } else {
-                            Text(downloads.selection.isEmpty ? "Select a download" : "\(downloads.selection.count) downloads selected")
-                                .font(.rocketBody)
-                                .foregroundStyle(RocketColor.textSecondary)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    }
-                    .inspectorColumnWidth(min: 260, ideal: RocketSize.inspectorWidth, max: 420)
-                }
         }
-        .searchable(text: $downloads.search, placement: .toolbar, prompt: "Filter")
         .toolbar {
-            ToolbarItem { Button("Add", systemImage: "plus") { downloads.beginAdding() }.help("Add downloads (⌘N)") }
-            ToolbarItem(placement: .primaryAction) {
-                Button("Inspector", systemImage: "sidebar.right") { downloads.showsInspector.toggle() }
-                    .help("Show details (⌥⌘I)")
-                    .keyboardShortcut("i", modifiers: [.command, .option])
-            }
             ToolbarItem {
                 Menu {
-                    Picker("Sort By", selection: $downloads.sort) {
-                        ForEach(DownloadSort.allCases) { Text($0.title).tag($0) }
+                    Picker("Category", selection: $downloads.category) {
+                        Text("Any Type").tag(FileCategory?.none)
+                        ForEach(FileCategory.allCases, id: \.self) { Text($0.title).tag(Optional($0)) }
                     }
-                    .pickerStyle(.inline)
+                    Picker("Size", selection: $downloads.sizeFilter) {
+                        ForEach(SizeFilter.allCases) { Text($0.title).tag($0) }
+                    }
+                    Picker("Date Added", selection: $downloads.dateFilter) {
+                        ForEach(DateFilter.allCases) { Text($0.title).tag($0) }
+                    }
                     Divider()
-                    Button("Clear Completed") { Task { await downloads.clearCompleted() } }
-                        .disabled(!downloads.hasFinished)
+                    Button("Clear Filters") { downloads.clearRefinements() }
+                        .disabled(!downloads.hasRefinements)
                 } label: {
-                    Label("View Options", systemImage: "line.3.horizontal.decrease")
+                    Label("Filter", systemImage: downloads.hasRefinements
+                        ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 }
-                .help("Sort and clear")
+                .help("Filter by type, size and date")
             }
             ToolbarItem {
-                Menu {
-                    SpeedLimitPicker("Limit All Downloads", current: downloads.settings.globalSpeedLimit) { rate in
-                        Task { await downloads.setGlobalLimit(rate) }
-                    }
-                } label: {
-                    Label("Speed Limit", systemImage: "gauge.with.dots.needle.33percent")
+                Picker("View", selection: $downloads.viewMode) {
+                    ForEach(DownloadViewMode.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
                 }
-                .help(downloads.settings.globalSpeedLimit.map { "Limited to \(Format.speed(Double($0)))" } ?? "No speed limit")
+                .pickerStyle(.segmented)
+                .help("List or grid (⌘1, ⌘2)")
             }
             ToolbarItem {
-                if downloads.hasRunning || !downloads.hasPaused {
-                    Button("Pause All", systemImage: "pause") { Task { await downloads.pauseAll() } }
-                        .disabled(!downloads.hasRunning)
-                } else {
-                    Button("Resume All", systemImage: "play") { Task { await downloads.resumeAll() } }
+                ToolbarSearchField(model: downloads)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    downloads.beginAdding()
+                } label: {
+                    Label("Add Download", systemImage: "plus")
+                        .labelStyle(.titleAndIcon)
                 }
+                .buttonStyle(.borderedProminent)
+                .help("Add downloads (⌘N)")
             }
         }
+        .sheet(isPresented: Binding(get: { downloads.detailsID != nil }, set: { if !$0 { downloads.detailsID = nil } })) {
+            if let id = downloads.detailsID {
+                VStack(spacing: 0) {
+                    DownloadDetailView(model: downloads, id: id)
+                    Divider()
+                    HStack {
+                        Spacer()
+                        Button("Done") { downloads.detailsID = nil }
+                            .keyboardShortcut(.cancelAction)
+                    }
+                    .padding(RocketSpace.s4)
+                }
+                .frame(width: 460, height: 560)
+            }
+        }
+        .tint(RocketColor.accent)
         .sheet(item: $downloads.refreshing) { download in
             RefreshLinkSheet(download: download) { url in await downloads.refreshLink(download.id, to: url) }
         }
