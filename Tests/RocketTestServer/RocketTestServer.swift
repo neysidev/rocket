@@ -14,7 +14,7 @@ import os
 ///   - `fail=<status>&failCount=N`: the first N requests for this exact URL return `status` (default N=1).
 ///   - `dropAt=<offset>&dropCount=N`: the first N requests close the connection once the body reaches
 ///     absolute file offset `offset` (default N=1).
-///   - `delayMs=ms`: pause between 64 KiB chunks (slow server).
+///   - `delayMs=ms`: pause between 64 KiB chunks (slow server); with `delayFrom=<offset>` only from that offset on.
 /// - `GET /redirect?to=<path>` answers `302` to `to`.
 public final class RocketTestServer: Sendable {
     public let port: UInt16
@@ -171,7 +171,8 @@ public final class RocketTestServer: Sendable {
         let dropAt = query["dropAt"].flatMap(Int64.init).flatMap { count <= Int(query["dropCount"] ?? "1") ?? 1 ? $0 : nil }
         let body = method == "HEAD" ? nil : BodyPlan(
             offset: start, end: end, version: version, dropAt: dropAt,
-            delay: .milliseconds(Int(query["delayMs"] ?? "0") ?? 0)
+            delay: .milliseconds(Int(query["delayMs"] ?? "0") ?? 0),
+            delayFrom: Int64(query["delayFrom"] ?? "0") ?? 0
         )
         send(connection, status: status, headers: responseHeaders, body: body, queue: queue)
     }
@@ -182,6 +183,7 @@ public final class RocketTestServer: Sendable {
         let version: String
         let dropAt: Int64?
         let delay: DispatchTimeInterval
+        let delayFrom: Int64
     }
 
     private static func send(
@@ -216,7 +218,7 @@ public final class RocketTestServer: Sendable {
             guard error == nil else { return connection.cancel() }
             var next = plan
             next.offset += Int64(count)
-            if plan.delay == .milliseconds(0) {
+            if plan.delay == .milliseconds(0) || plan.offset < plan.delayFrom {
                 sendBody(connection, plan: next, queue: queue)
             } else {
                 queue.asyncAfter(deadline: .now() + plan.delay) { sendBody(connection, plan: next, queue: queue) }

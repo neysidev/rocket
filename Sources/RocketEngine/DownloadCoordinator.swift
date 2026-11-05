@@ -1,0 +1,127 @@
+import Foundation
+import RocketCore
+
+/// Runs one download: owns its segment plan and runs segment workers in a task group.
+///
+/// Segmented mode (size known, ranges supported): N workers, each streaming one range with `If-Range`;
+/// when a worker finishes it takes over half of the largest remaining segment. Otherwise one stream.
+public actor DownloadCoordinator {
+    public let url: URL
+    public let info: RemoteFileInfo
+    private let file: PartFile
+    private let transport: any HTTPTransport
+    private let planner: SegmentPlanner
+    private let connections: Int
+
+    public private(set) var segments: [Segment]
+    private var active: Set<Int> = []
+
+    public init(
+        url: URL, info: RemoteFileInfo, file: PartFile, segments: [Segment] = [],
+        connections: Int, transport: any HTTPTransport, planner: SegmentPlanner = SegmentPlanner()
+    ) {
+        self.url = url
+        self.info = info
+        self.file = file
+        self.transport = transport
+        self.planner = planner
+        self.connections = max(1, connections)
+        self.segments = segments
+    }
+
+    public nonisolated var isSegmented: Bool { info.acceptsRanges && info.totalBytes != nil }
+
+    public var receivedBytes: Int64 { segments.reduce(0) { $0 + $1.received } }
+
+    /// Known up front, or learned when a stream of unknown length ends.
+    public var totalBytes: Int64? {
+        if let total = info.totalBytes { return total }
+        if let segment = segments.first, segment.isComplete { return segment.end + 1 }
+        return nil
+    }
+
+    /// Downloads every remaining byte into the part file. Cancelling the calling task stops all workers;
+    /// `segments` keeps how far each one got.
+    public func run() async throws {
+        if segments.isEmpty || !isSegmented && segments.contains(where: { !$0.isComplete }) {
+            // Without range support a single stream must restart from byte 0.
+            segments = isSegmented
+                ? planner.initialSegments(totalBytes: info.totalBytes!, connections: connections)
+                : [info.totalBytes.map { Segment(start: 0, end: $0 - 1) } ?? .open()]
+        }
+        let target = isSegmented ? connections : 1
+
+        try await withThrowingTaskGroup(of: Int.self) { group in
+            while active.count < target, let index = claimSegment() {
+                group.addTask { try await self.transfer(index); return index }
+            }
+            while let finished = try await group.next() {
+                active.remove(finished)
+                while active.count < target, let index = claimSegment() {
+                    group.addTask { try await self.transfer(index); return index }
+                }
+            }
+        }
+
+        guard segments.allSatisfy(\.isComplete) else {
+            throw DownloadError.network(code: URLError.networkConnectionLost.rawValue)
+        }
+    }
+
+    /// Picks an unstarted segment, or splits the largest active one.
+    private func claimSegment() -> Int? {
+        if let index = segments.indices.first(where: { !segments[$0].isComplete && !active.contains($0) }) {
+            active.insert(index)
+            return index
+        }
+        guard isSegmented, let split = planner.split(segments, candidates: active) else { return nil }
+        segments[split.index].end = split.shortenedEnd
+        segments.append(split.newSegment)
+        active.insert(segments.count - 1)
+        return segments.count - 1
+    }
+
+    /// Records progress and returns the segment's current end, which a split may have moved.
+    private func advance(_ index: Int, to offset: Int64) -> Int64 {
+        let segment = segments[index]
+        segments[index].received = min(offset, segment.end + 1) - segment.start
+        return segments[index].end
+    }
+
+    /// A stream of unknown length ended cleanly: its last byte is the file's last byte.
+    private func closeOpenSegment(_ index: Int, at offset: Int64) {
+        segments[index].end = offset - 1
+    }
+
+    private func segment(_ index: Int) -> Segment { segments[index] }
+
+    /// Streams one segment into the file. Runs off the actor; only bookkeeping hops onto it.
+    private nonisolated func transfer(_ index: Int) async throws {
+        let segment = await segment(index)
+        let response = try await transport.fetch(
+            url,
+            range: isSegmented ? ByteRange(start: segment.next, end: segment.end) : nil,
+            ifRange: isSegmented ? info.validator : nil
+        )
+        // A full-body answer to an If-Range request means the file changed on the server.
+        if isSegmented, !response.isPartial { throw DownloadError.remoteFileChanged }
+
+        var offset = response.bodyStart
+        var end = segment.end
+        for try await chunk in response.body {
+            try Task.checkCancellation()
+            let count = Int(min(Int64(chunk.count), end - offset + 1))
+            guard count > 0 else { return }
+            // ponytail: pwrite on the cooperative pool; move to a dedicated I/O executor if profiling shows stalls.
+            try file.write(count == chunk.count ? chunk : chunk.prefix(count), at: offset)
+            offset += Int64(count)
+            end = await advance(index, to: offset)
+            if offset > end { return } // another worker took over the rest
+        }
+        if info.totalBytes == nil {
+            await closeOpenSegment(index, at: offset)
+        } else if offset <= end {
+            throw DownloadError.network(code: URLError.networkConnectionLost.rawValue)
+        }
+    }
+}
