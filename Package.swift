@@ -38,7 +38,12 @@ let package = Package(
             dependencies: ["RocketIPC", .product(name: "ArgumentParser", package: "swift-argument-parser")]
         ),
 
+        // Development-only HTTP server for tests. Never ships.
+        .target(name: "RocketTestServer", path: "Tests/RocketTestServer"),
+        .executableTarget(name: "rocket-test-server", dependencies: ["RocketTestServer"], path: "Tests/RocketTestServerTool"),
+
         .testTarget(name: "RocketCoreTests", dependencies: ["RocketCore"]),
+        .testTarget(name: "RocketNetworkingTests", dependencies: ["RocketNetworking", "RocketTestServer"]),
         .testTarget(name: "RocketPersistenceTests", dependencies: ["RocketPersistence"]),
         .testTarget(name: "RocketIPCTests", dependencies: ["RocketIPC"]),
     ]
