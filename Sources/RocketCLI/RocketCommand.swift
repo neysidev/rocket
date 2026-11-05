@@ -10,7 +10,10 @@ struct RocketCommand: AsyncParsableCommand {
         commandName: "rocket",
         abstract: "Fast, resumable downloads from the terminal.",
         version: "API \(RocketAPI.version.major).\(RocketAPI.version.minor)",
-        subcommands: [Add.self, Info.self, List.self, Limit.self, QueueCommand.self, Refresh.self, Pause.self, Resume.self, Cancel.self]
+        subcommands: [
+            Add.self, Info.self, List.self, Wait.self, Limit.self, QueueCommand.self, ConfigCommand.self, Refresh.self,
+            Pause.self, Resume.self, Cancel.self,
+        ]
     )
 
     /// Same as ArgumentParser's default, but usage errors exit 2 (TRD) instead of 64.
@@ -104,6 +107,27 @@ struct List: AsyncParsableCommand {
         if json { return Output.printJSON(downloads) }
         if downloads.isEmpty { return print("No downloads.") }
         downloads.forEach { Output.print($0, json: false) }
+    }
+}
+
+struct Wait: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Wait until downloads finish; exit 1 if any failed or was cancelled.",
+        discussion: "With no IDs, waits for every queued or running download (paused ones wait for you, so they are skipped)."
+    )
+    @Argument(help: "Download IDs or unique prefixes of them.") var ids: [String] = []
+    @Flag(help: "Print JSON.") var json = false
+
+    func run() async throws {
+        var targets: [UUID] = []
+        for id in ids { targets.append(try await Agent.resolve(id)) }
+        if ids.isEmpty {
+            targets = try await Agent.snapshot().filter { ![.completed, .failed, .cancelled, .paused].contains($0.state) }.map(\.id)
+        }
+        var finished: [Download] = []
+        for id in targets { finished.append(try await Agent.waitForEnd(of: id)) }
+        if json { Output.printJSON(finished) } else { finished.forEach { Output.print($0, json: false) } }
+        if finished.contains(where: { $0.state != .completed }) { throw ExitCode.failure }
     }
 }
 
@@ -204,6 +228,97 @@ struct QueueRemove: AsyncParsableCommand {
     static let configuration = CommandConfiguration(commandName: "remove", abstract: "Remove a queue; its downloads move to Default.")
     @Argument var name: String
     func run() async throws { try await Agent.expectOK(.deleteQueue(id: Agent.queue(named: name).id)) }
+}
+
+struct ConfigCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "config", abstract: "Show or change Rocket's settings.",
+        subcommands: [ConfigList.self, ConfigGet.self, ConfigSet.self], defaultSubcommand: ConfigList.self
+    )
+}
+
+/// Settings the CLI can read and change. They live in the app's preferences domain, which the agent reads
+/// before each add. ponytail: an open Settings window shows the old value until the app restarts; proxy is
+/// app-only because it has several linked fields.
+enum ConfigKey: String, CaseIterable, ExpressibleByArgument {
+    case folder, connections, autoSort = "auto-sort", speedLimit = "speed-limit", keepAwake = "keep-awake"
+    case notifications, dockProgress = "dock-progress"
+
+    func value(in defaults: RocketDefaults) -> String {
+        switch self {
+        case .folder: defaults.folder.path
+        case .connections: "\(defaults.connections)"
+        case .autoSort: Self.onOff(defaults.autoSort)
+        case .speedLimit: defaults.globalSpeedLimit.map { Output.bytes($0) + "/s" } ?? "off"
+        case .keepAwake: defaults.sleepPrevention.rawValue
+        case .notifications: Self.onOff(defaults.notificationsEnabled)
+        case .dockProgress: Self.onOff(defaults.showDockProgress)
+        }
+    }
+
+    /// Validates and stores `text`; the speed limit goes through the agent so it applies live.
+    func set(_ text: String, in defaults: RocketDefaults) async throws {
+        switch self {
+        case .folder:
+            let url = URL(filePath: (text as NSString).expandingTildeInPath, directoryHint: .isDirectory, relativeTo: .currentDirectory())
+            var isFolder: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder), isFolder.boolValue else {
+                throw ValidationError("Not a folder: \(text)")
+            }
+            defaults.folder = url.standardizedFileURL
+        case .connections:
+            guard let count = Int(text), RocketDefaults.connectionRange.contains(count) else { throw ValidationError("connections must be 1–16") }
+            defaults.connections = count
+        case .autoSort: defaults.autoSort = try Self.bool(text)
+        case .notifications: defaults.notificationsEnabled = try Self.bool(text)
+        case .dockProgress: defaults.showDockProgress = try Self.bool(text)
+        case .keepAwake:
+            guard let value = SleepPrevention(rawValue: text) else {
+                throw ValidationError("keep-awake must be one of: \(SleepPrevention.allCases.map(\.rawValue).joined(separator: ", "))")
+            }
+            defaults.sleepPrevention = value
+        case .speedLimit:
+            let bytes = text.lowercased() == "off" ? nil : ByteRate.parse(text)
+            guard bytes != nil || text.lowercased() == "off" else { throw ValidationError("Not a speed: \(text). Try 2M, 500K or off.") }
+            try await Agent.expectOK(.setLimit(downloadID: nil, bytesPerSecond: bytes))
+        }
+    }
+
+    static func onOff(_ value: Bool) -> String { value ? "on" : "off" }
+
+    static func bool(_ text: String) throws -> Bool {
+        switch text.lowercased() {
+        case "on", "true", "yes", "1": return true
+        case "off", "false", "no", "0": return false
+        default: throw ValidationError("Use on or off, not \(text).")
+        }
+    }
+}
+
+struct ConfigList: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "list", abstract: "Show all settings.")
+    @Flag(help: "Print JSON.") var json = false
+
+    func run() async throws {
+        let defaults = RocketDefaults()
+        if json {
+            return Output.printJSON(Dictionary(uniqueKeysWithValues: ConfigKey.allCases.map { ($0.rawValue, $0.value(in: defaults)) }))
+        }
+        for key in ConfigKey.allCases { print("\(key.rawValue.padding(toLength: 14, withPad: " ", startingAt: 0)) \(key.value(in: defaults))") }
+    }
+}
+
+struct ConfigGet: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "get", abstract: "Print one setting.")
+    @Argument(help: "One of: \(ConfigKey.allCases.map(\.rawValue).joined(separator: ", ")).") var key: ConfigKey
+    func run() async throws { print(key.value(in: RocketDefaults())) }
+}
+
+struct ConfigSet: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "set", abstract: "Change one setting.")
+    @Argument(help: "One of: \(ConfigKey.allCases.map(\.rawValue).joined(separator: ", ")).") var key: ConfigKey
+    @Argument(help: "New value: a path, a number, on/off, a speed like 2M, or never/onPower/always for keep-awake.") var value: String
+    func run() async throws { try await key.set(value, in: RocketDefaults()) }
 }
 
 struct Refresh: AsyncParsableCommand {
