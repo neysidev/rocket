@@ -6,12 +6,14 @@ import SwiftUI
 public struct MenuBarPanel: View {
     @Bindable var model: DownloadsModel
     let openMainWindow: () -> Void
+    let openCommandPalette: () -> Void
     @State private var filter = ""
     @FocusState private var filterFocused: Bool
 
-    public init(model: DownloadsModel, openMainWindow: @escaping () -> Void) {
+    public init(model: DownloadsModel, openMainWindow: @escaping () -> Void, openCommandPalette: @escaping () -> Void) {
         self.model = model
         self.openMainWindow = openMainWindow
+        self.openCommandPalette = openCommandPalette
     }
 
     public var body: some View {
@@ -115,18 +117,19 @@ public struct MenuBarPanel: View {
                 .font(.rocketBody)
                 .focused($filterFocused)
                 .onExitCommand { filter = "" }
-            Keycap("⌘K")
+            Button {
+                openCommandPalette()
+            } label: {
+                Keycap("⌘K")
+            }
+            .buttonStyle(.plain)
+            .help(String(localized: "Open command palette in the main window"))
         }
         .padding(.horizontal, RocketSpace.s4)
         .frame(height: 36)
         .background(RocketColor.raised, in: RoundedRectangle(cornerRadius: RocketRadius.control, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: RocketRadius.control, style: .continuous)
             .strokeBorder(filterFocused ? RocketColor.accent : RocketColor.border))
-        .background {
-            Button("Focus filter") { filterFocused = true }
-                .keyboardShortcut("k")
-                .hidden()
-        }
     }
 }
 

@@ -105,7 +105,7 @@ import Testing
         history[2].queueID = "night"
         model.apply(history, now: .now)
         model.apply(history.map { var d = $0; if d.state == .downloading { d.receivedBytes += 84_000_000 }; return d }, now: .now + .seconds(1))
-        let view = MenuBarPanel(model: model) {}
+        let view = MenuBarPanel(model: model, openMainWindow: {}, openCommandPalette: {})
             .background(RocketColor.canvas)
             .environment(\.colorScheme, appearance == .darkAqua ? .dark : .light)
         let renderer = ImageRenderer(content: view)

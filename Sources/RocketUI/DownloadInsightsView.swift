@@ -48,7 +48,7 @@ public struct DownloadInsightsView: View {
         .frame(width: 560)
     }
 
-    private func insightStat(_ label: LocalizedStringKey, value: String, detail: String?) -> some View {
+    private func insightStat(_ label: String, value: String, detail: String?) -> some View {
         VStack(alignment: .leading, spacing: RocketSpace.s2) {
             Text(label).font(.rocketLabel).foregroundStyle(RocketColor.textSecondary)
             Text(value).font(.rocketMetricLarge).foregroundStyle(RocketColor.textPrimary).monospacedDigit()

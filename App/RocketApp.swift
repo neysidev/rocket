@@ -95,10 +95,14 @@ struct MenuBarContent: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        MenuBarPanel(model: downloads) {
+        MenuBarPanel(model: downloads, openMainWindow: {
             openWindow(id: "main")
             NSApp.activate()
-        }
+        }, openCommandPalette: {
+            openWindow(id: "main")
+            NSApp.activate()
+            downloads.isCommandPaletteOpen = true
+        })
     }
 }
 
@@ -112,6 +116,8 @@ struct DownloadCommands: Commands {
                 .keyboardShortcut("n")
         }
         CommandGroup(replacing: .textEditing) {
+            Button("Command Palette…") { downloads.isCommandPaletteOpen = true }
+                .keyboardShortcut("k", modifiers: .command)
             Button("Search Downloads") { downloads.isSearching = true }
                 .keyboardShortcut("f")
         }

@@ -51,5 +51,17 @@ struct MainWindow: View {
         .onChange(of: downloads.alert) { _, message in
             if message != nil { soundEffects?.playWarning() }
         }
+        .rocketCommandPalette(downloads: downloads)
+        .background { commandPaletteShortcut }
+    }
+
+    @ViewBuilder
+    private var commandPaletteShortcut: some View {
+        if downloads.adding == nil, downloads.detailsID == nil, downloads.refreshing == nil,
+           downloads.editingQueue == nil, !downloads.isCommandPaletteOpen {
+            Button("Command Palette") { downloads.isCommandPaletteOpen = true }
+                .keyboardShortcut("k", modifiers: .command)
+                .hidden()
+        }
     }
 }

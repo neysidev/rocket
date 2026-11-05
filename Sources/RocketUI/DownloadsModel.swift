@@ -183,6 +183,8 @@ public final class DownloadsModel {
     public var detailsID: UUID?
     /// The toolbar search field is expanded (⌘F).
     public var isSearching = false
+    /// Global command palette (⌘K).
+    public var isCommandPaletteOpen = false
     /// Download whose link is being refreshed.
     public var refreshing: Download?
     /// Queue being edited (a new one has an unsaved id).
