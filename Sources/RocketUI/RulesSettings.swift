@@ -1,3 +1,4 @@
+import AppKit
 import RocketCore
 import RocketDesign
 import SwiftUI
@@ -5,63 +6,124 @@ import SwiftUI
 /// Rule list: first enabled match wins, drag to change order (FR-ORG-02).
 struct RulesSettings: View {
     @Bindable var model: DownloadsModel
-    @State private var editing: DownloadRule?
-    @State private var selection: String?
+    @Binding var editing: DownloadRule?
+    @State private var dropTarget: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: RocketSpace.s3) {
-            Text("Rules decide where new downloads go and how they run. The first matching rule wins; options you pick when adding a download always win.")
-                .font(.rocketCaption)
-                .foregroundStyle(RocketColor.textSecondary)
-            List(selection: $selection) {
-                ForEach(model.rules) { rule in
-                    HStack {
-                        Toggle("", isOn: Binding(get: { rule.enabled }, set: { enabled in
-                            var updated = rule
-                            updated.enabled = enabled
-                            Task { await model.saveRule(updated) }
-                        }))
-                        .labelsHidden()
-                        VStack(alignment: .leading, spacing: RocketSpace.s1) {
-                            Text(rule.name.isEmpty ? String(localized: "Untitled rule") : rule.name).font(.rocketHeadline)
-                            Text(RuleText.summary(rule, queues: model.queues))
-                                .font(.rocketLabel)
-                                .foregroundStyle(RocketColor.textSecondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    .tag(rule.id)
-                    .contextMenu {
-                        Button("Edit…") { editing = rule }
-                        Button("Delete") { Task { await model.deleteRule(rule.id) } }
+        VStack(alignment: .leading, spacing: RocketSpace.s4) {
+            HStack(alignment: .top, spacing: RocketSpace.s5) {
+                Text("Rules decide where new downloads go and how they run. The first matching rule wins; options you pick when adding a download always win.")
+                    .font(.rocketBody)
+                    .foregroundStyle(RocketColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    editing = DownloadRule(name: "")
+                } label: {
+                    HStack(spacing: RocketSpace.s2 + 1) {
+                        Image(systemName: "plus").font(.system(size: 10.5, weight: .semibold))
+                        Text("New Rule")
                     }
                 }
-                .onMove { source, destination in Task { await model.moveRules(from: source, to: destination) } }
+                .buttonStyle(RocketButtonStyle(.secondary, size: .small))
             }
-            .listStyle(.bordered(alternatesRowBackgrounds: true))
-            .frame(minHeight: 200)
-            .overlay {
-                if model.rules.isEmpty {
-                    Text("No rules yet").font(.rocketBody).foregroundStyle(RocketColor.textSecondary)
+            if model.rules.isEmpty {
+                VStack(spacing: RocketSpace.s3) {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 15))
+                        .foregroundStyle(RocketColor.textSecondary)
+                        .frame(width: 36, height: 36)
+                        .rocketCard(fill: RocketColor.control, radius: 10)
+                    Text("No rules yet").font(.rocketHeadline).foregroundStyle(RocketColor.textPrimary)
+                    Text("For example: put .iso files from releases.ubuntu.com in a Linux folder.")
+                        .font(.rocketLabel)
+                        .foregroundStyle(RocketColor.textSecondary)
                 }
-            }
-            HStack(spacing: RocketSpace.s2) {
-                Button("Add Rule", systemImage: "plus") { editing = DownloadRule(name: "") }
-                Button("Remove", systemImage: "minus") {
-                    if let selection { Task { await model.deleteRule(selection) } }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, RocketSpace.s7)
+                .rocketCard()
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(model.rules.enumerated()), id: \.element.id) { index, rule in
+                        RuleRow(rule: rule, model: model, edit: { editing = rule })
+                            .overlay(alignment: .top) {
+                                if dropTarget == rule.id { Rectangle().fill(RocketColor.accent).frame(height: 2) }
+                            }
+                            .draggable(rule.id)
+                            .dropDestination(for: String.self) { ids, _ in
+                                dropTarget = nil
+                                guard let id = ids.first, let from = model.rules.firstIndex(where: { $0.id == id }), from != index else { return false }
+                                Task { await model.moveRules(from: IndexSet(integer: from), to: index) }
+                                return true
+                            } isTargeted: { targeted in
+                                if targeted { dropTarget = rule.id } else if dropTarget == rule.id { dropTarget = nil }
+                            }
+                    }
                 }
-                .disabled(selection == nil)
-                Spacer()
-                Button("Edit…") { editing = model.rules.first { $0.id == selection } }
-                    .disabled(selection == nil)
+                .padding(.bottom, -1)
+                .clipShape(RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous))
+                .rocketCard()
+                Text("Drag rules to change their order.")
+                    .font(.rocketCaption)
+                    .foregroundStyle(RocketColor.textTertiary)
             }
-            .labelStyle(.iconOnly)
         }
-        .padding(RocketSpace.s6)
-        .frame(width: 520)
-        .sheet(item: $editing) { rule in
-            RuleEditor(rule: rule, queues: model.queues) { saved in Task { await model.saveRule(saved) } }
+    }
+}
+
+private struct RuleRow: View {
+    let rule: DownloadRule
+    let model: DownloadsModel
+    let edit: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: RocketSpace.s4) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(RocketColor.textTertiary)
+                .opacity(hovering ? 1 : 0.4)
+            Toggle(isOn: Binding(get: { rule.enabled }, set: { enabled in
+                var updated = rule
+                updated.enabled = enabled
+                Task { await model.saveRule(updated) }
+            })) { EmptyView() }
+                .toggleStyle(.rocketCheckbox)
+                .accessibilityLabel("Enabled")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rule.name.isEmpty ? String(localized: "Untitled rule") : rule.name)
+                    .font(.rocketHeadline)
+                    .foregroundStyle(rule.enabled ? RocketColor.textPrimary : RocketColor.textSecondary)
+                Text(RuleText.summary(rule, queues: model.queues))
+                    .font(.rocketLabel)
+                    .foregroundStyle(RocketColor.textSecondary)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: RocketSpace.s1) {
+                Button("Edit", systemImage: "pencil", action: edit)
+                    .buttonStyle(.rocketIcon)
+                    .rocketTooltip(String(localized: "Edit"))
+                Button("Delete", systemImage: "trash") { Task { await model.deleteRule(rule.id) } }
+                    .buttonStyle(IconButtonStyle(role: .destructive))
+                    .rocketTooltip(String(localized: "Delete"))
+            }
+            .opacity(hovering ? 1 : 0)
         }
+        .rocketFormRowChrome()
+        .background(hovering ? RocketColor.hover : .clear)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(RocketMotion.fast, value: hovering)
+        .onTapGesture { if (NSApp.currentEvent?.clickCount ?? 1) >= 2 { edit() } }
+        .rocketContextMenu {
+            [RocketMenuSection(items: [
+                RocketMenuItem(String(localized: "Edit…"), symbol: "pencil", action: edit),
+                RocketMenuItem(String(localized: "Delete"), symbol: "trash", role: .destructive) { Task { await model.deleteRule(rule.id) } },
+            ])]
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Edit", edit)
+        .accessibilityAction(named: "Delete") { Task { await model.deleteRule(rule.id) } }
     }
 }
 
@@ -69,7 +131,7 @@ struct RuleEditor: View {
     @State private var rule: DownloadRule
     let queues: [DownloadQueue]
     let onSave: (DownloadRule) -> Void
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.rocketDismiss) private var dismiss
     @State private var choosingFolder = false
 
     init(rule: DownloadRule, queues: [DownloadQueue], onSave: @escaping (DownloadRule) -> Void) {
@@ -79,56 +141,86 @@ struct RuleEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Form {
-                TextField("Name", text: $rule.name, prompt: Text("Linux ISOs"))
-                Section("When") {
-                    TextField("Sites", text: list(\.match.domains), prompt: Text("releases.ubuntu.com, github.com"))
-                    TextField("File types", text: list(\.match.extensions), prompt: Text("iso, dmg, zip"))
-                    TextField("At least (MB)", text: megabytes(\.match.minBytes), prompt: Text("any size"))
-                    TextField("At most (MB)", text: megabytes(\.match.maxBytes), prompt: Text("any size"))
-                }
-                Section("Then") {
-                    LabeledContent("Save to") {
-                        HStack {
-                            Button(rule.action.folderPath.map { URL(filePath: $0).lastPathComponent } ?? String(localized: "Default folder")) {
-                                choosingFolder = true
-                            }
-                            if rule.action.folderPath != nil {
-                                Button("Clear", systemImage: "xmark.circle.fill") { rule.action.folderPath = nil }
-                                    .labelStyle(.iconOnly)
-                                    .buttonStyle(.borderless)
-                            }
+        RocketModalLayout(rule.name.isEmpty ? String(localized: "New rule") : String(localized: "Edit rule")) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: RocketSpace.s5) {
+                    RocketFormSection {
+                        RocketFormRow(String(localized: "Name")) {
+                            TextField("Name", text: $rule.name, prompt: Text("Linux ISOs")).rocketField().frame(width: 220)
                         }
                     }
-                    Picker("Queue", selection: $rule.action.queueID) {
-                        Text("Default").tag(String?.none)
-                        ForEach(queues.filter { !$0.isDefault }) { Text($0.name).tag(String?.some($0.id)) }
+                    RocketFormSection(String(localized: "When")) {
+                        RocketFormRow(String(localized: "Sites")) {
+                            TextField("Sites", text: list(\.match.domains), prompt: Text(verbatim: "releases.ubuntu.com, github.com"))
+                                .rocketField().frame(width: 220)
+                        }
+                        RocketFormRow(String(localized: "File types")) {
+                            TextField("File types", text: list(\.match.extensions), prompt: Text(verbatim: "iso, dmg, zip"))
+                                .rocketField(mono: true).frame(width: 220)
+                        }
+                        RocketFormRow(String(localized: "At least (MB)")) {
+                            TextField("At least (MB)", text: megabytes(\.match.minBytes), prompt: Text("any size"))
+                                .rocketField(mono: true).frame(width: 120)
+                        }
+                        RocketFormRow(String(localized: "At most (MB)")) {
+                            TextField("At most (MB)", text: megabytes(\.match.maxBytes), prompt: Text("any size"))
+                                .rocketField(mono: true).frame(width: 120)
+                        }
                     }
-                    Picker("Connections", selection: $rule.action.connections) {
-                        Text("Default").tag(Int?.none)
-                        ForEach([1, 2, 4, 8, 12, 16], id: \.self) { Text("\($0)").tag(Int?.some($0)) }
-                    }
-                    Picker("Speed limit", selection: $rule.action.speedLimit) {
-                        Text("None").tag(Int64?.none)
-                        ForEach(ByteRate.presets, id: \.self) { Text(Format.speed(Double($0))).tag(Int64?.some($0)) }
+                    RocketFormSection(String(localized: "Then")) {
+                        RocketFormRow(String(localized: "Save to")) {
+                            HStack(spacing: RocketSpace.s1) {
+                                Button {
+                                    choosingFolder = true
+                                } label: {
+                                    HStack(spacing: RocketSpace.s2 + 2) {
+                                        Image(systemName: "folder").foregroundStyle(RocketColor.textSecondary)
+                                        Text(rule.action.folderPath.map { URL(filePath: $0).lastPathComponent } ?? String(localized: "Default folder"))
+                                    }
+                                }
+                                .buttonStyle(RocketButtonStyle(.secondary, size: .small))
+                                if rule.action.folderPath != nil {
+                                    Button("Clear", systemImage: "xmark") { rule.action.folderPath = nil }
+                                        .buttonStyle(IconButtonStyle(size: 22))
+                                        .rocketTooltip(String(localized: "Use the default folder"))
+                                }
+                            }
+                        }
+                        RocketFormRow(String(localized: "Queue")) {
+                            RocketSelect(String(localized: "Queue"), selection: $rule.action.queueID,
+                                         options: [RocketOption(String?.none, String(localized: "Default"))]
+                                             + queues.filter { !$0.isDefault }.map { RocketOption(String?.some($0.id), $0.name) })
+                                .fixedSize()
+                        }
+                        RocketFormRow(String(localized: "Connections")) {
+                            RocketSelect(String(localized: "Connections"), selection: $rule.action.connections,
+                                         options: [RocketOption(Int?.none, String(localized: "Default"))]
+                                             + [1, 2, 4, 8, 12, 16].map { RocketOption(Int?.some($0), "\($0)") })
+                                .fixedSize()
+                        }
+                        RocketFormRow(String(localized: "Speed limit")) {
+                            RocketSelect(String(localized: "Speed limit"), selection: $rule.action.speedLimit,
+                                         groups: SpeedLimitOptions.selectGroups(current: rule.action.speedLimit, unlimited: String(localized: "None")))
+                                .fixedSize()
+                        }
                     }
                 }
+                .padding(.horizontal, RocketSpace.s6)
+                .padding(.bottom, RocketSpace.s5)
             }
-            .formStyle(.grouped)
-            HStack {
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") {
-                    onSave(rule)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+            .frame(height: 400)
+        } actions: {
+            Button("Cancel") { dismiss() }
+                .buttonStyle(.rocketGhost)
+                .keyboardShortcut(.cancelAction)
+            Button("Save") {
+                onSave(rule)
+                dismiss()
             }
-            .padding(RocketSpace.s6)
+            .keyboardShortcut(.defaultAction)
+            .buttonStyle(.rocketPrimary)
         }
-        .frame(width: 460)
+        .frame(width: 500)
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { rule.action.folderPath = url.path }
         }

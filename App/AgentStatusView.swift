@@ -11,24 +11,28 @@ struct AgentStatusView: View {
     }
 
     private var status: some View {
-        HStack(spacing: RocketSpace.s2) {
-            Image(systemName: symbol)
-                .foregroundStyle(color)
-            Text(word)
-                .font(.rocketLabel)
-                .foregroundStyle(color)
-                .help(detail)
+        HStack(spacing: RocketSpace.s3) {
+            Group {
+                if agent.status == .connecting { RocketSpinner(size: 12) } else { StatusGlyph(.failed, size: 12) }
+            }
+            .foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(word).font(.rocketLabel).foregroundStyle(RocketColor.textPrimary)
+                Text(detail).font(.rocketCaption).foregroundStyle(RocketColor.textSecondary).lineLimit(2)
+            }
             Spacer(minLength: 0)
             if agent.status == .needsApproval {
-                Button("Open Login Items") { agent.openLoginItems() }
-                    .buttonStyle(.link)
-                    .font(.rocketLabel)
+                Button("Open") { agent.openLoginItems() }
+                    .buttonStyle(RocketButtonStyle(.secondary, size: .small))
+                    .rocketTooltip(String(localized: "Open Login Items"))
             } else if case .unavailable = agent.status {
                 Button("Retry") { Task { await agent.connect() } }
-                    .buttonStyle(.link)
-                    .font(.rocketLabel)
+                    .buttonStyle(RocketButtonStyle(.secondary, size: .small))
             }
         }
+        .padding(RocketSpace.s3)
+        .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous).strokeBorder(color.opacity(0.3)))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Agent \(word). \(detail)")
     }

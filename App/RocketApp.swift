@@ -21,6 +21,7 @@ struct RocketApp: App {
                     NSApp.activate()
                 }
         }
+        .windowStyle(.hiddenTitleBar)
         .commands {
             DownloadCommands(downloads: app.downloads)
             UpdateCommands(updater: app.updater)

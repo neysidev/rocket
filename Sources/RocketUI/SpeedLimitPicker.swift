@@ -1,43 +1,24 @@
 import RocketCore
+import RocketDesign
 import SwiftUI
 
-/// Native picker for a speed limit (Unlimited or a preset), for use inside menus.
-public struct SpeedLimitPicker: View {
-    let title: LocalizedStringKey
-    let current: Int64?
-    let set: (Int64?) -> Void
-    /// Inline for menus; a pop-up button in forms.
-    let inline: Bool
-
-    public init(_ title: LocalizedStringKey = "Speed Limit", current: Int64?, inline: Bool = true, set: @escaping (Int64?) -> Void) {
-        self.title = title
-        self.current = current
-        self.inline = inline
-        self.set = set
-    }
-
-    public var body: some View {
-        Picker(title, selection: Binding(get: { current }, set: set)) {
-            Text("Unlimited").tag(Int64?.none)
-            Divider()
-            ForEach(options, id: \.self) { rate in
-                Text(Format.speed(Double(rate))).tag(Int64?.some(rate))
-            }
-        }
-        .modifier(PickerStyleModifier(inline: inline))
-    }
-
+/// Speed limit choices (Unlimited or a preset) for Rocket menus and selects.
+public enum SpeedLimitOptions {
     /// Presets, plus the current value if it was set elsewhere (e.g. `rocket limit 3M`).
-    private var options: [Int64] {
+    static func rates(including current: Int64?) -> [Int64] {
         guard let current, !ByteRate.presets.contains(current) else { return ByteRate.presets }
         return (ByteRate.presets + [current]).sorted()
     }
-}
 
-private struct PickerStyleModifier: ViewModifier {
-    let inline: Bool
+    @MainActor
+    public static func menuItems(current: Int64?, set: @escaping (Int64?) -> Void) -> [RocketMenuItem] {
+        [RocketMenuItem(String(localized: "Unlimited"), checked: current == nil) { set(nil) }]
+            + rates(including: current).map { rate in
+                RocketMenuItem(Format.speed(Double(rate)), checked: current == rate) { set(rate) }
+            }
+    }
 
-    func body(content: Content) -> some View {
-        if inline { content.pickerStyle(.inline) } else { content.pickerStyle(.menu) }
+    public static func selectGroups(current: Int64?, unlimited: String = String(localized: "Unlimited")) -> [[RocketOption<Int64?>]] {
+        [[RocketOption(nil, unlimited)], rates(including: current).map { RocketOption(Optional($0), Format.speed(Double($0))) }]
     }
 }

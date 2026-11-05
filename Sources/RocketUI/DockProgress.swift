@@ -31,7 +31,7 @@ private final class DockTileView: NSView {
         NSColor.black.withAlphaComponent(0.55).setFill()
         NSBezierPath(roundedRect: bar, xRadius: bar.height / 2, yRadius: bar.height / 2).fill()
         let fill = bar.insetBy(dx: 2, dy: 2)
-        NSColor(RocketColor.flame).setFill()
+        NSColor(RocketColor.accent).setFill()
         NSBezierPath(roundedRect: NSRect(x: fill.minX, y: fill.minY, width: max(fill.height, fill.width * min(1, fraction)), height: fill.height),
                      xRadius: fill.height / 2, yRadius: fill.height / 2).fill()
     }

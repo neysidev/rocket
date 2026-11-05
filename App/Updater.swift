@@ -1,3 +1,4 @@
+import RocketDesign
 import Sparkle
 import SwiftUI
 
@@ -49,14 +50,14 @@ struct UpdateSettings: View {
     }
 
     var body: some View {
-        Section("Updates") {
-            Toggle("Check for updates automatically", isOn: $automatic)
-                .disabled(updater == nil)
-                .onChange(of: automatic) { updater?.automaticallyChecksForUpdates = automatic }
-            if updater == nil {
-                Text("Updates are off in this build.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        RocketFormSection(String(localized: "Updates")) {
+            RocketFormRow(String(localized: "Check for updates automatically"),
+                          detail: updater == nil ? String(localized: "Updates are off in this build.") : nil) {
+                Toggle("Check for updates automatically", isOn: $automatic)
+                    .labelsHidden()
+                    .toggleStyle(.rocketSwitch)
+                    .disabled(updater == nil)
+                    .onChange(of: automatic) { updater?.automaticallyChecksForUpdates = automatic }
             }
         }
     }

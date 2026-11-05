@@ -46,11 +46,7 @@ import Testing
         let rendered = try #require(image)
         #expect(rendered.width == 1280)
 
-        if let dir = ProcessInfo.processInfo.environment["ROCKET_RENDER_DIR"] {
-            let url = URL(filePath: dir).appending(path: "rows-\(appearance.rawValue).png")
-            let rep = NSBitmapImageRep(cgImage: rendered)
-            try rep.representation(using: .png, properties: [:])!.write(to: url)
-        }
+        try RenderExport.writePNG(rendered, named: "rows-\(appearance.rawValue).png")
     }
 
     @Test func gridCardsRender() throws {
@@ -72,10 +68,7 @@ import Testing
         let rendered = try #require(image)
         #expect(rendered.width > 0)
 
-        if let dir = ProcessInfo.processInfo.environment["ROCKET_RENDER_DIR"] {
-            let rep = NSBitmapImageRep(cgImage: rendered)
-            try rep.representation(using: .png, properties: [:])!.write(to: URL(filePath: dir).appending(path: "cards.png"))
-        }
+        try RenderExport.writePNG(rendered, named: "cards.png")
     }
 
     @Test func addSheetRenders() async throws {
@@ -86,17 +79,14 @@ import Testing
         )
         await model.review()
         let view = AddDownloadsSheet(model: model) { _ in }
-            .background(RocketColor.panel)
+            .background(RocketColor.canvas)
             .environment(\.colorScheme, .dark)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
         var image: CGImage?
         NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { image = renderer.cgImage }
         let rendered = try #require(image)
-        if let dir = ProcessInfo.processInfo.environment["ROCKET_RENDER_DIR"] {
-            try NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:])!
-                .write(to: URL(filePath: dir).appending(path: "add-sheet.png"))
-        }
+        try RenderExport.writePNG(rendered, named: "add-sheet.png")
     }
 
     @Test(arguments: [NSAppearance.Name.aqua, .darkAqua])
@@ -116,17 +106,14 @@ import Testing
         model.apply(history, now: .now)
         model.apply(history.map { var d = $0; if d.state == .downloading { d.receivedBytes += 84_000_000 }; return d }, now: .now + .seconds(1))
         let view = MenuBarPanel(model: model) {}
-            .background(RocketColor.panel)
+            .background(RocketColor.canvas)
             .environment(\.colorScheme, appearance == .darkAqua ? .dark : .light)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
         var image: CGImage?
         NSAppearance(named: appearance)!.performAsCurrentDrawingAppearance { image = renderer.cgImage }
         let rendered = try #require(image)
-        if let dir = ProcessInfo.processInfo.environment["ROCKET_RENDER_DIR"] {
-            try NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:])!
-                .write(to: URL(filePath: dir).appending(path: "panel-\(appearance.rawValue).png"))
-        }
+        try RenderExport.writePNG(rendered, named: "panel-\(appearance.rawValue).png")
     }
 
     @Test func detailPartsRender() throws {
@@ -155,9 +142,6 @@ import Testing
         var image: CGImage?
         NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { image = renderer.cgImage }
         let rendered = try #require(image)
-        if let dir = ProcessInfo.processInfo.environment["ROCKET_RENDER_DIR"] {
-            try NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:])!
-                .write(to: URL(filePath: dir).appending(path: "detail.png"))
-        }
+        try RenderExport.writePNG(rendered, named: "detail.png")
     }
 }

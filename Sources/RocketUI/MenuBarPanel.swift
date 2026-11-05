@@ -31,33 +31,38 @@ public struct MenuBarPanel: View {
         }
         .padding(RocketSpace.s3)
         .frame(width: RocketSize.menuBarPanelWidth)
+        .background(RocketColor.canvas)
+        // The menu bar window closes when it loses key, so menus here open without taking it.
+        .environment(\.rocketPopoverTakesKey, false)
     }
 
     private var header: some View {
-        HStack(spacing: RocketSpace.s2) {
+        HStack(spacing: RocketSpace.s3) {
+            RocketMark(size: 20)
             Text("Rocket")
                 .font(.rocketTitle)
                 .foregroundStyle(RocketColor.textPrimary)
             Text(model.isDownloading ? Format.speed(model.totalSpeed) : String(localized: "Idle"))
                 .font(.rocketTitle.weight(.regular))
-                .foregroundStyle(RocketColor.textSecondary)
+                .foregroundStyle(model.isDownloading ? RocketColor.accentText : RocketColor.textSecondary)
                 .monospacedDigit()
+                .contentTransition(.numericText())
             Spacer()
             if model.hasRunning {
                 Button("Pause All", systemImage: "pause") { Task { await model.pauseAll() } }
                     .buttonStyle(.rocketIcon)
-                    .help("Pause all downloads")
+                    .rocketTooltip(String(localized: "Pause all downloads"))
             } else {
                 Button("Resume All", systemImage: "play") { Task { await model.resumeAll() } }
                     .buttonStyle(.rocketIcon)
                     .disabled(!model.hasPaused)
-                    .help("Resume all downloads")
+                    .rocketTooltip(String(localized: "Resume all downloads"))
             }
             SettingsLink {
                 Label("Settings", systemImage: "gearshape")
             }
             .buttonStyle(.rocketIcon)
-            .help("Settings")
+            .rocketTooltip(String(localized: "Settings"), shortcut: "⌘,")
         }
         .padding(.horizontal, RocketSpace.s2)
     }
@@ -67,8 +72,9 @@ public struct MenuBarPanel: View {
         let limit = model.settings.globalSpeedLimit
         return StatCard(label: "Speed", value: value, unit: unit) {
             // FR-SPD-01: the global limit, changeable live from the menu bar.
-            Menu {
-                SpeedLimitPicker("Limit All Downloads", current: limit) { rate in Task { await model.setGlobalLimit(rate) } }
+            RocketMenuButton(alignment: .trailing) {
+                [RocketMenuSection(String(localized: "Limit all downloads"),
+                                   items: SpeedLimitOptions.menuItems(current: limit) { rate in Task { await model.setGlobalLimit(rate) } })]
             } label: {
                 if let limit {
                     Text("≤ \(Format.speed(Double(limit)))").font(.rocketLabel).foregroundStyle(RocketColor.textSecondary)
@@ -76,10 +82,9 @@ public struct MenuBarPanel: View {
                     Sparkline(values: model.speedHistory)
                 }
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
             .fixedSize()
-            .help("Speed limit")
+            .rocketTooltip(String(localized: "Speed limit"))
         }
     }
 
@@ -102,26 +107,22 @@ public struct MenuBarPanel: View {
     }
 
     private var filterField: some View {
-        HStack(spacing: RocketSpace.s2) {
+        HStack(spacing: RocketSpace.s3) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(RocketColor.textSecondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(RocketColor.textTertiary)
             TextField("Filter downloads", text: $filter)
                 .textFieldStyle(.plain)
                 .font(.rocketBody)
                 .focused($filterFocused)
                 .onExitCommand { filter = "" }
-            Text("⌘K")
-                .font(.rocketCaption.weight(.medium))
-                .foregroundStyle(RocketColor.textSecondary)
-                .padding(.horizontal, 6)
-                .frame(height: RocketSize.keycapHeight)
-                .background(RocketColor.control, in: RoundedRectangle(cornerRadius: RocketRadius.small))
-                .overlay(RoundedRectangle(cornerRadius: RocketRadius.small).stroke(RocketColor.hairline))
-                .accessibilityHidden(true)
+            Keycap("⌘K")
         }
         .padding(.horizontal, RocketSpace.s4)
         .frame(height: 36)
-        .background(RocketColor.control, in: RoundedRectangle(cornerRadius: RocketRadius.control))
+        .background(RocketColor.raised, in: RoundedRectangle(cornerRadius: RocketRadius.control, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: RocketRadius.control, style: .continuous)
+            .strokeBorder(filterFocused ? RocketColor.accent : RocketColor.border))
         .background {
             Button("Focus filter") { filterFocused = true }
                 .keyboardShortcut("k")
@@ -159,7 +160,7 @@ struct StatCard<Accessory: View>: View {
         }
         .padding(RocketSpace.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RocketColor.card, in: RoundedRectangle(cornerRadius: RocketRadius.card))
+        .rocketCard()
         .accessibilityElement(children: .combine)
     }
 }
@@ -167,12 +168,12 @@ struct StatCard<Accessory: View>: View {
 extension StatCard where Accessory == Text? {
     init(label: LocalizedStringKey, value: String, unit: String? = nil, status: LocalizedStringKey? = nil) {
         self.init(label: label, value: value, unit: unit) {
-            status.map { Text($0).font(.rocketLabel).foregroundStyle(RocketColor.success) }
+            status.map { Text($0).font(.rocketLabel).foregroundStyle(RocketColor.accentText) }
         }
     }
 }
 
-/// 16 bars, 2 pt wide, 14 pt tall; the latest in Flame.
+/// 16 bars, 2 pt wide, 14 pt tall; the latest in Ember.
 struct Sparkline: View {
     let values: [Double]
 
@@ -181,7 +182,7 @@ struct Sparkline: View {
         HStack(alignment: .bottom, spacing: 1) {
             ForEach(Array(values.enumerated()), id: \.offset) { index, value in
                 Capsule()
-                    .fill(index == values.count - 1 ? RocketColor.flame : RocketColor.chartNeutral)
+                    .fill(index == values.count - 1 ? RocketColor.accent : RocketColor.chartNeutral)
                     .frame(width: 2, height: max(2, 14 * value / peak))
             }
         }
@@ -190,7 +191,7 @@ struct Sparkline: View {
     }
 }
 
-/// 24 hourly bars of completed bytes; the current hour in Flame. No gridlines, two captions.
+/// 24 hourly bars of completed bytes; the current hour in Ember. No gridlines, two captions.
 struct ThroughputCard: View {
     let buckets: [Int64]
 
@@ -205,14 +206,14 @@ struct ThroughputCard: View {
                     .monospacedDigit()
             }
             if buckets.allSatisfy({ $0 == 0 }) {
-                Capsule().fill(RocketColor.chartTrack).frame(height: 2).padding(.top, 40)
+                Capsule().fill(RocketColor.track).frame(height: 2).padding(.top, 40)
                 Text("No downloads in the last 24 hours")
                     .font(.rocketCaption)
                     .foregroundStyle(RocketColor.textTertiary)
             } else {
                 Chart(Array(buckets.enumerated()), id: \.offset) { hour, bytes in
                     BarMark(x: .value("Hour", hour), y: .value("Bytes", bytes), width: .fixed(10))
-                        .foregroundStyle(hour == buckets.count - 1 ? RocketColor.flame : RocketColor.chartNeutral)
+                        .foregroundStyle(hour == buckets.count - 1 ? RocketColor.accent : RocketColor.chartNeutral)
                         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 2, topTrailingRadius: 2))
                 }
                 .chartXAxis(.hidden)
@@ -229,7 +230,7 @@ struct ThroughputCard: View {
             }
         }
         .padding(RocketSpace.s4)
-        .background(RocketColor.card, in: RoundedRectangle(cornerRadius: RocketRadius.card))
+        .rocketCard()
     }
 
     private var summary: String {
@@ -251,10 +252,7 @@ struct LiveList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: RocketSpace.s3) {
-                Image(systemName: queue.schedule == nil ? "list.bullet" : "clock")
-                    .frame(width: RocketSize.fileTile, height: RocketSize.fileTile)
-                    .background(RocketColor.control, in: RoundedRectangle(cornerRadius: RocketRadius.small))
-                    .foregroundStyle(RocketColor.textSecondary)
+                FileTile(symbol: queue.schedule == nil ? "tray" : "clock")
                 Text(queue.name).font(.rocketHeadline).foregroundStyle(RocketColor.textPrimary)
                 Text(queue.schedule?.summary ?? model.settings.folder.path(percentEncoded: false).replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                     .font(.rocketMono)
@@ -276,7 +274,7 @@ struct LiveList: View {
             }
         }
         .padding(RocketSpace.s4)
-        .background(RocketColor.card, in: RoundedRectangle(cornerRadius: RocketRadius.card))
+        .rocketCard()
     }
 
     @ViewBuilder
@@ -299,6 +297,7 @@ struct CompactRow: View {
     let item: DownloadItem
     let model: DownloadsModel
     let openMainWindow: () -> Void
+    @State private var hovering = false
 
     private var download: Download { item.download }
 
@@ -306,7 +305,7 @@ struct CompactRow: View {
         HStack(spacing: RocketSpace.s3) {
             // Connector from the group header, in the tertiary color.
             Rectangle()
-                .fill(RocketColor.textTertiary.opacity(0.5))
+                .fill(RocketColor.borderStrong)
                 .frame(width: 1)
                 .padding(.leading, RocketSize.fileTile / 2)
                 .padding(.trailing, RocketSize.fileTile / 2 - 1)
@@ -320,20 +319,23 @@ struct CompactRow: View {
                     Spacer(minLength: RocketSpace.s2)
                     Text(trailingText)
                         .font(.rocketLabel)
-                        .foregroundStyle(download.state == .downloading ? RocketColor.flameText : RocketColor.textSecondary)
+                        .foregroundStyle(download.state == .downloading ? RocketColor.accentText : RocketColor.textSecondary)
                         .monospacedDigit()
                 }
                 if download.state != .completed {
                     RocketProgressBar(
                         fraction: item.fraction,
-                        tint: download.state == .downloading ? RocketColor.flame : RocketColor.textTertiary
+                        tint: download.state == .downloading ? RocketColor.accent : RocketColor.textTertiary
                     )
                 }
             }
             button
         }
         .frame(height: RocketSize.row - RocketSpace.s3)
+        .background(hovering ? RocketColor.hover : .clear, in: RoundedRectangle(cornerRadius: RocketRadius.small + 1, style: .continuous))
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(RocketMotion.fast, value: hovering)
         .onTapGesture {
             model.filter = .all
             model.selection = [download.id]
