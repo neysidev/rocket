@@ -81,3 +81,26 @@ private struct SegmentRecord: Codable, FetchableRecord, PersistableRecord {
 
     var segment: Segment { Segment(start: start, end: end, received: received) }
 }
+
+extension DownloadQueue: FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "queue"
+}
+
+extension GRDBDownloadRepository: QueueRepository {
+    public func queues() async throws -> [DownloadQueue] {
+        try read { try DownloadQueue.order(Column("sortOrder"), Column("name")).fetchAll($0) }
+    }
+
+    public func save(_ queue: DownloadQueue) async throws {
+        try write { try queue.save($0) }
+    }
+
+    /// The default queue cannot be deleted; a deleted queue's downloads move to it.
+    public func deleteQueue(id: String) async throws {
+        guard id != DownloadQueue.defaultID else { return }
+        try write { db in
+            try db.execute(sql: "UPDATE download SET queueId = ? WHERE queueId = ?", arguments: [DownloadQueue.defaultID, id])
+            _ = try DownloadQueue.deleteOne(db, key: id)
+        }
+    }
+}

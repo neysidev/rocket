@@ -89,6 +89,17 @@ public struct RocketDatabase: Sendable {
                 t.add(column: "failure", .text) // JSON-encoded DownloadError
             }
         }
+        m.registerMigration("v3_queues") { db in
+            try db.alter(table: "download") { t in
+                t.add(column: "position", .double).notNull().defaults(to: 0)
+            }
+            try db.execute(sql: "UPDATE download SET position = strftime('%s', createdAt) - 978307200")
+            try db.alter(table: "queue") { t in
+                t.add(column: "shortcutName", .text)
+                t.add(column: "speedLimit", .integer)
+            }
+            try db.execute(sql: "UPDATE queue SET postAction = 'none' WHERE postAction IS NULL")
+        }
         return m
     }
 }

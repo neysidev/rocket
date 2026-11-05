@@ -9,6 +9,9 @@ public struct Download: Codable, Sendable, Identifiable, Hashable {
     public var fileName: String
     public var state: DownloadState
     public var connections: Int
+    public var queueID: String
+    /// Order within the queue (FR-QUE-03); lower runs first.
+    public var position: Double
     public var createdAt: Date
     public var completedAt: Date?
 
@@ -41,6 +44,8 @@ public struct Download: Codable, Sendable, Identifiable, Hashable {
         self.state = state
         self.connections = connections
         self.createdAt = createdAt
+        queueID = DownloadQueue.defaultID
+        position = createdAt.timeIntervalSinceReferenceDate
         acceptsRanges = false
         receivedBytes = 0
     }
@@ -69,6 +74,37 @@ public struct Download: Codable, Sendable, Identifiable, Hashable {
 
     public var fileURL: URL {
         URL(filePath: destinationPath, directoryHint: .isDirectory).appending(path: fileName)
+    }
+}
+
+extension Download {
+    enum CodingKeys: String, CodingKey {
+        case id, url, destinationPath, fileName, state, connections, position, createdAt, completedAt
+        case finalURL, totalBytes, acceptsRanges, etag, lastModified, receivedBytes, speedLimit, failure
+        case queueID = "queueId"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        url = try c.decode(URL.self, forKey: .url)
+        destinationPath = try c.decode(String.self, forKey: .destinationPath)
+        fileName = try c.decode(String.self, forKey: .fileName)
+        state = try c.decode(DownloadState.self, forKey: .state)
+        connections = try c.decode(Int.self, forKey: .connections)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        // Older encodings (IPC from a previous minor version) may lack these.
+        queueID = try c.decodeIfPresent(String.self, forKey: .queueID) ?? DownloadQueue.defaultID
+        position = try c.decodeIfPresent(Double.self, forKey: .position) ?? createdAt.timeIntervalSinceReferenceDate
+        completedAt = try c.decodeIfPresent(Date.self, forKey: .completedAt)
+        finalURL = try c.decodeIfPresent(URL.self, forKey: .finalURL)
+        totalBytes = try c.decodeIfPresent(Int64.self, forKey: .totalBytes)
+        acceptsRanges = try c.decodeIfPresent(Bool.self, forKey: .acceptsRanges) ?? false
+        etag = try c.decodeIfPresent(String.self, forKey: .etag)
+        lastModified = try c.decodeIfPresent(String.self, forKey: .lastModified)
+        receivedBytes = try c.decodeIfPresent(Int64.self, forKey: .receivedBytes) ?? 0
+        speedLimit = try c.decodeIfPresent(Int64.self, forKey: .speedLimit)
+        failure = try c.decodeIfPresent(DownloadError.self, forKey: .failure)
     }
 }
 

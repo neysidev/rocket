@@ -1,11 +1,18 @@
 import Foundation
 import RocketCore
 
-/// Owns every download's lifecycle in the agent: starts queued downloads up to `maxActive`, pauses,
-/// resumes and cancels them, recovers after a crash and retries when the network returns. One per agent.
+/// Owns every download's lifecycle in the agent: runs each queue up to its own limit inside its schedule,
+/// pauses, resumes and cancels, recovers after a crash, retries when the network returns, and runs a queue's
+/// after-action when it runs dry. One per agent.
 public actor DownloadScheduler {
     private let repository: any DownloadRepository
     private let checkpoints: any CheckpointStore
+    private let queueStore: any QueueRepository
+    private let now: @Sendable () -> Date
+    /// Runs a queue's after-action (sleep, shut down, …) once it has nothing left to do.
+    private let runPostAction: @Sendable (DownloadQueue) async -> Void
+    /// Called with true when downloads start running and false when none are left (sleep prevention).
+    private let onActivityChange: @Sendable (Bool) async -> Void
     private let transport: any HTTPTransport
     private let maxActive: Int
     private let retry: RetryPolicy
@@ -17,15 +24,28 @@ public actor DownloadScheduler {
     private var coordinators: [UUID: DownloadCoordinator] = [:]
     private let globalLimiter: BandwidthLimiter
     private var downloadLimiters: [UUID: BandwidthLimiter] = [:]
+    private var queueLimiters: [String: BandwidthLimiter] = [:]
+    /// Queue of each running download.
+    private var runningQueue: [UUID: String] = [:]
+    /// Queues that started work since they were last empty; their after-action fires when they run dry.
+    private var busyQueues: Set<String> = []
+    private var wasActive = false
     private let defaults: RocketDefaults
     /// Why a running task is being stopped, so its cancellation lands in the right state.
     private var stopping: [UUID: DownloadState] = [:]
 
     public init(
-        repository: any DownloadRepository, checkpoints: any CheckpointStore, transport: any HTTPTransport,
-        maxActive: Int = 3, retry: RetryPolicy = RetryPolicy(), checkpointInterval: Duration = .seconds(2),
-        defaults: RocketDefaults = RocketDefaults()
+        repository: any DownloadRepository, checkpoints: any CheckpointStore, queues: any QueueRepository,
+        transport: any HTTPTransport, maxActive: Int = 32, retry: RetryPolicy = RetryPolicy(),
+        checkpointInterval: Duration = .seconds(2), defaults: RocketDefaults = RocketDefaults(),
+        now: @escaping @Sendable () -> Date = { .now },
+        runPostAction: @escaping @Sendable (DownloadQueue) async -> Void = { _ in },
+        onActivityChange: @escaping @Sendable (Bool) async -> Void = { _ in }
     ) {
+        queueStore = queues
+        self.now = now
+        self.runPostAction = runPostAction
+        self.onActivityChange = onActivityChange
         self.defaults = defaults
         globalLimiter = BandwidthLimiter(bytesPerSecond: defaults.globalSpeedLimit)
         self.repository = repository
@@ -54,13 +74,17 @@ public actor DownloadScheduler {
     }
 
     /// Probes the URL (FR-ADD-02), stores the download and queues it.
-    public func add(url: URL, folder: URL, fileName: String? = nil, connections: Int = 8, speedLimit: Int64? = nil) async throws -> Download {
+    public func add(
+        url: URL, folder: URL, fileName: String? = nil, connections: Int = 8, speedLimit: Int64? = nil,
+        queueID: String = DownloadQueue.defaultID
+    ) async throws -> Download {
         guard ["http", "https"].contains(url.scheme?.lowercased()) else { throw DownloadError.invalidURL }
         let info = try await transport.probe(url)
         let name = FileNameSanitizer.sanitize(fileName ?? info.suggestedFileName ?? url.lastPathComponent)
         var download = Download(url: url, destinationPath: folder.path, fileName: name, connections: min(16, max(1, connections)))
         download.remoteInfo = info
         download.speedLimit = speedLimit
+        download.queueID = try await queues().contains { $0.id == queueID } ? queueID : DownloadQueue.defaultID
         try await repository.save(download)
         log.info("Queued \(download.id, privacy: .public)")
         try await fill()
@@ -136,6 +160,56 @@ public actor DownloadScheduler {
         get async { await globalLimiter.bytesPerSecond }
     }
 
+    // MARK: Queues
+
+    /// All queues in display order; creates the default queue if missing.
+    public func queues() async throws -> [DownloadQueue] {
+        var queues = try await queueStore.queues()
+        if !queues.contains(where: \.isDefault) {
+            let fallback = DownloadQueue(id: DownloadQueue.defaultID, name: String(localized: "Default"), sortOrder: -1)
+            try await queueStore.save(fallback)
+            queues.insert(fallback, at: 0)
+        }
+        return queues
+    }
+
+    public func saveQueue(_ queue: DownloadQueue) async throws {
+        var queue = queue
+        queue.maxActive = min(16, max(1, queue.maxActive))
+        try await queueStore.save(queue)
+        await queueLimiters[queue.id]?.setRate(queue.speedLimit)
+        try await fill()
+    }
+
+    public func deleteQueue(id: String) async throws {
+        try await queueStore.deleteQueue(id: id)
+        queueLimiters[id] = nil
+        try await fill()
+    }
+
+    /// Moves downloads to `queueID`, placed before `before` (or at the end), keeping their order (FR-QUE-03).
+    public func move(ids: [UUID], toQueue queueID: String, before: UUID?) async throws {
+        let siblings = try await repository.all()
+            .filter { $0.queueID == queueID && !ids.contains($0.id) }
+            .sorted { $0.position < $1.position }
+        let index = before.flatMap { id in siblings.firstIndex { $0.id == id } } ?? siblings.endIndex
+        let lower = index > 0 ? siblings[index - 1].position : (siblings.first?.position ?? 0) - Double(ids.count + 1)
+        let upper = index < siblings.endIndex ? siblings[index].position : lower + Double(ids.count + 1)
+        let step = (upper - lower) / Double(ids.count + 1)
+        for (offset, id) in ids.enumerated() {
+            var download = try await existing(id)
+            download.queueID = queueID
+            download.position = lower + step * Double(offset + 1)
+            try await repository.save(download)
+        }
+        try await fill()
+    }
+
+    /// Re-evaluates schedules: opens queues whose window started, parks downloads of queues whose window ended.
+    public func tick() async throws {
+        try await fill()
+    }
+
     /// Downloads with live progress for running ones.
     public func snapshot() async throws -> [Download] {
         var downloads = try await repository.all()
@@ -163,13 +237,63 @@ public actor DownloadScheduler {
         return download
     }
 
-    /// Starts queued downloads, oldest first, while there is room.
+    /// For each queue inside its schedule: start queued downloads in order while it has room. Queues outside
+    /// their schedule have running downloads sent back to the queue.
     private func fill() async throws {
-        let queued = try await repository.all().filter { $0.state == .queued }.sorted { $0.createdAt < $1.createdAt }
-        for download in queued where running.count < maxActive && running[download.id] == nil {
-            let id = download.id
-            running[id] = Task { await self.perform(id) }
+        let queues = try await queues()
+        let downloads = try await repository.all()
+        let date = now()
+        for queue in queues {
+            let members = downloads.filter { $0.queueID == queue.id }
+            if let schedule = queue.schedule, !schedule.isOpen(at: date) {
+                for id in runningQueue.filter({ $0.value == queue.id }).keys { await stop(id, as: .queued) }
+                continue
+            }
+            let queued = members.filter { $0.state == .queued && running[$0.id] == nil }.sorted { $0.position < $1.position }
+            for download in queued {
+                let active = runningQueue.values.count { $0 == queue.id }
+                guard active < queue.maxActive, running.count < maxActive else { break }
+                start(download.id, in: queue)
+            }
         }
+        try await finishIdleQueues(queues)
+        await reportActivity()
+    }
+
+    private func start(_ id: UUID, in queue: DownloadQueue) {
+        runningQueue[id] = queue.id
+        busyQueues.insert(queue.id)
+        if queueLimiters[queue.id] == nil { queueLimiters[queue.id] = BandwidthLimiter(bytesPerSecond: queue.speedLimit) }
+        running[id] = Task { await self.perform(id) }
+    }
+
+    private func stop(_ id: UUID, as state: DownloadState) async {
+        guard let task = running[id] else { return }
+        stopping[id] = state
+        task.cancel()
+        await task.value
+    }
+
+    /// FR-QUE-05: a queue that did work and now has nothing queued or running fires its after-action once.
+    private func finishIdleQueues(_ queues: [DownloadQueue]) async throws {
+        guard !busyQueues.isEmpty else { return }
+        let downloads = try await repository.all()
+        for queue in queues where busyQueues.contains(queue.id) {
+            let pending = downloads.contains { $0.queueID == queue.id && ($0.state == .queued || $0.state.isRunning) }
+            guard !pending, !runningQueue.values.contains(queue.id) else { continue }
+            busyQueues.remove(queue.id)
+            if queue.postAction != .none {
+                log.info("Queue \(queue.name, privacy: .public) finished; running \(queue.postAction.rawValue, privacy: .public)")
+                await runPostAction(queue)
+            }
+        }
+    }
+
+    private func reportActivity() async {
+        let active = !running.isEmpty
+        guard active != wasActive else { return }
+        wasActive = active
+        await onActivityChange(active)
     }
 
     private func perform(_ id: UUID) async {
@@ -179,6 +303,7 @@ public actor DownloadScheduler {
             await handle(error, for: id)
         }
         running[id] = nil
+        runningQueue[id] = nil
         coordinators[id] = nil
         downloadLimiters[id] = nil
         stopping[id] = nil
@@ -196,10 +321,11 @@ public actor DownloadScheduler {
         let checkpoints = checkpoints
         let limiter = BandwidthLimiter(bytesPerSecond: download.speedLimit)
         downloadLimiters[id] = limiter
+        let limiters = [globalLimiter, queueLimiters[download.queueID], limiter].compactMap { $0 }
         let coordinator = DownloadCoordinator(
             url: download.finalURL ?? download.url, info: download.remoteInfo, file: file,
             segments: try await checkpoints.segments(downloadID: id), connections: download.connections,
-            transport: transport, retry: retry, limiters: [globalLimiter, limiter], checkpointInterval: checkpointInterval,
+            transport: transport, retry: retry, limiters: limiters, checkpointInterval: checkpointInterval,
             onCheckpoint: { try await checkpoints.saveCheckpoint(downloadID: id, segments: $0) }
         )
         coordinators[id] = coordinator
@@ -252,6 +378,11 @@ public actor DownloadScheduler {
         download.state = state
         try await repository.save(download)
     }
+}
+
+extension DownloadState {
+    /// The agent is working on it right now.
+    var isRunning: Bool { [.probing, .downloading, .verifying].contains(self) }
 }
 
 public enum SchedulerError: Error, Sendable, Equatable {

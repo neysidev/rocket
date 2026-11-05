@@ -12,7 +12,11 @@ let log = Rocket.logger("Agent")
 let scheduler: DownloadScheduler
 do {
     let repository = GRDBDownloadRepository(db: try RocketDatabase.onDisk())
-    scheduler = DownloadScheduler(repository: repository, checkpoints: repository, transport: URLSessionHTTPTransport())
+    scheduler = DownloadScheduler(
+        repository: repository, checkpoints: repository, queues: repository, transport: URLSessionHTTPTransport(),
+        runPostAction: { await PostQueueActions.run($0) },
+        onActivityChange: { await SleepAssertion.shared.update(downloading: $0) }
+    )
 } catch {
     log.error("Database failed to open: \(error.localizedDescription, privacy: .public)")
     exit(1)
@@ -35,8 +39,20 @@ do {
 // ponytail: agent never idles out; add the TRD's 60 s idle exit once clients reconnect on demand.
 Task {
     do { try await scheduler.start() } catch { log.error("Start failed: \(error.localizedDescription, privacy: .public)") }
-    for await isOnline in NetworkReachability.updates() where isOnline {
-        try? await scheduler.networkAvailable()
+    await withDiscardingTaskGroup { group in
+        group.addTask {
+            for await isOnline in NetworkReachability.updates() where isOnline {
+                try? await scheduler.networkAvailable()
+            }
+        }
+        group.addTask {
+            // Opens and closes scheduled queues. ponytail: fixed 30 s tick; sleep until the next window
+            // boundary instead if idle wake-ups show up in energy measurements (PERF-05).
+            while true {
+                try? await Task.sleep(for: .seconds(30))
+                try? await scheduler.tick()
+            }
+        }
     }
 }
 

@@ -11,6 +11,7 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
         static let connections = "defaultConnections"
         static let notifications = "notificationsEnabled"
         static let globalSpeedLimit = "globalSpeedLimit"
+        static let sleepPrevention = "sleepPrevention"
     }
 
     private let store: UserDefaults
@@ -38,6 +39,12 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
     public var globalSpeedLimit: Int64? {
         get { (store.object(forKey: Key.globalSpeedLimit) as? NSNumber).map(\.int64Value).flatMap { $0 > 0 ? $0 : nil } }
         nonmutating set { store.set(newValue.map(NSNumber.init(value:)), forKey: Key.globalSpeedLimit) }
+    }
+
+    /// Off on battery by default (FR-QUE-06).
+    public var sleepPrevention: SleepPrevention {
+        get { store.string(forKey: Key.sleepPrevention).flatMap(SleepPrevention.init(rawValue:)) ?? .onPower }
+        nonmutating set { store.set(newValue.rawValue, forKey: Key.sleepPrevention) }
     }
 
     public var notificationsEnabled: Bool {

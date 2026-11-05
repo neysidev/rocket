@@ -10,7 +10,7 @@ struct RocketCommand: AsyncParsableCommand {
         commandName: "rocket",
         abstract: "Fast, resumable downloads from the terminal.",
         version: "API \(RocketAPI.version.major).\(RocketAPI.version.minor)",
-        subcommands: [Add.self, Info.self, List.self, Limit.self, Pause.self, Resume.self, Cancel.self]
+        subcommands: [Add.self, Info.self, List.self, Limit.self, QueueCommand.self, Pause.self, Resume.self, Cancel.self]
     )
 
     /// Same as ArgumentParser's default, but usage errors exit 2 (TRD) instead of 64.
@@ -42,6 +42,7 @@ struct Add: AsyncParsableCommand {
     @Option(help: "File name (default: the server's).") var name: String?
     @Option(help: "Parallel connections, 1–16.") var connections: Int?
     @Option(help: "Speed limit for this download, e.g. 2M or 500K (bytes per second).") var limit: String?
+    @Option(help: "Queue name (default: Default).") var queue: String?
     @Flag(help: "Wait until the download finishes; exit 1 if it fails.") var wait = false
     @Flag(help: "Print JSON.") var json = false
 
@@ -53,9 +54,11 @@ struct Add: AsyncParsableCommand {
 
     func run() async throws {
         let directory = dir.map { URL(filePath: $0, relativeTo: .currentDirectory()).path }
+        var queueID: String?
+        if let queue { queueID = try await Agent.queue(named: queue).id }
         let reply = try await Agent.send(.add(
             url: URL(string: url)!, directory: directory, fileName: name, connections: connections,
-            speedLimit: limit.flatMap(ByteRate.parse)
+            speedLimit: limit.flatMap(ByteRate.parse), queueID: queueID
         ))
         guard case .download(let download) = reply else { throw Agent.unexpected(reply) }
         guard wait else { return Output.print(download, json: json) }
@@ -110,6 +113,89 @@ struct Limit: AsyncParsableCommand {
     }
 }
 
+struct QueueCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "queue", abstract: "List, add or remove queues.", subcommands: [QueueList.self, QueueAdd.self, QueueRemove.self],
+        defaultSubcommand: QueueList.self
+    )
+}
+
+struct QueueList: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "list", abstract: "List queues.")
+    @Flag(help: "Print JSON.") var json = false
+
+    func run() async throws {
+        let queues = try await Agent.queues()
+        if json { return Output.printJSON(queues) }
+        for queue in queues {
+            var line = "\(queue.name)  max \(queue.maxActive)"
+            if let schedule = queue.schedule { line += "  \(schedule.summary)" }
+            if let limit = queue.speedLimit { line += "  limit \(Output.bytes(limit))/s" }
+            if queue.postAction != .none { line += "  then \(queue.postAction.rawValue)" }
+            print(line)
+        }
+    }
+}
+
+struct QueueAdd: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "add", abstract: "Add a queue, or update one with the same name.")
+    @Argument var name: String
+    @Option(help: "Simultaneous downloads, 1–16.") var max = 3
+    @Option(help: "Window start, HH:MM.") var start: String?
+    @Option(help: "Window end, HH:MM (may be earlier than start for overnight).") var stop: String?
+    @Option(help: "Days, e.g. mon,tue,fri or weekdays, weekends, all.") var days = "all"
+    @Option(help: "Speed limit for the queue, e.g. 2M.") var limit: String?
+    @Option(help: "After the queue finishes: none, notify, sleep, shutDown, quitRocket, runShortcut.") var then = PostQueueAction.none.rawValue
+    @Option(help: "Shortcut name for --then runShortcut.") var shortcut: String?
+
+    func validate() throws {
+        if (start == nil) != (stop == nil) { throw ValidationError("Use --start and --stop together.") }
+        if let start, Self.minutes(start) == nil { throw ValidationError("Not a time: \(start). Use HH:MM.") }
+        if let stop, Self.minutes(stop) == nil { throw ValidationError("Not a time: \(stop). Use HH:MM.") }
+        if Self.weekdays(days) == nil { throw ValidationError("Not days: \(days).") }
+        if PostQueueAction(rawValue: then) == nil { throw ValidationError("Unknown action: \(then).") }
+        if let limit, ByteRate.parse(limit) == nil { throw ValidationError("Not a speed: \(limit).") }
+    }
+
+    func run() async throws {
+        let existing = try await Agent.queues()
+        var queue = existing.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+            ?? DownloadQueue(name: name, sortOrder: (existing.map(\.sortOrder).max() ?? 0) + 1)
+        queue.maxActive = max
+        queue.schedule = start.flatMap(Self.minutes).flatMap { from in
+            stop.flatMap(Self.minutes).map { QueueSchedule(start: from, stop: $0, weekdays: Self.weekdays(days) ?? Set(1...7)) }
+        }
+        queue.speedLimit = limit.flatMap(ByteRate.parse)
+        queue.postAction = PostQueueAction(rawValue: then) ?? .none
+        queue.shortcutName = shortcut
+        try await Agent.expectOK(.saveQueue(queue))
+    }
+
+    static func minutes(_ text: String) -> Int? {
+        let parts = text.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
+        return parts[0] * 60 + parts[1]
+    }
+
+    static func weekdays(_ text: String) -> Set<Int>? {
+        switch text.lowercased() {
+        case "all", "daily": return Set(1...7)
+        case "weekdays": return Set(2...6)
+        case "weekends": return [1, 7]
+        default:
+            let names = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+            let days = text.lowercased().split(separator: ",").map { names.firstIndex(of: String($0.prefix(3))).map { $0 + 1 } }
+            return days.contains(nil) || days.isEmpty ? nil : Set(days.compactMap { $0 })
+        }
+    }
+}
+
+struct QueueRemove: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "remove", abstract: "Remove a queue; its downloads move to Default.")
+    @Argument var name: String
+    func run() async throws { try await Agent.expectOK(.deleteQueue(id: Agent.queue(named: name).id)) }
+}
+
 struct Pause: AsyncParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Pause a download.")
     @Argument(help: "Download ID or a unique prefix of it.") var id: String
@@ -155,6 +241,19 @@ enum Agent {
         let reply = try await send(.snapshot)
         guard case .snapshot(let downloads) = reply else { throw unexpected(reply) }
         return downloads
+    }
+
+    static func queues() async throws -> [DownloadQueue] {
+        let reply = try await send(.queues)
+        guard case .queues(let queues) = reply else { throw unexpected(reply) }
+        return queues
+    }
+
+    static func queue(named name: String) async throws -> DownloadQueue {
+        guard let queue = try await queues().first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame || $0.id == name }) else {
+            throw ValidationError("No queue named \(name). See rocket queue list.")
+        }
+        return queue
     }
 
     /// Full UUID, or a prefix that matches exactly one download.

@@ -5,10 +5,21 @@ import RocketNetworking
 import RocketTestServer
 import Testing
 
-/// In-memory fake for both persistence ports.
-actor MemoryRepository: DownloadRepository, CheckpointStore {
+/// In-memory fake for every persistence port.
+actor MemoryRepository: DownloadRepository, CheckpointStore, QueueRepository {
     var downloads: [UUID: Download] = [:]
     var segments: [UUID: [Segment]] = [:]
+    var queueStore: [String: DownloadQueue] = [:]
+
+    func queues() -> [DownloadQueue] { queueStore.values.sorted { $0.sortOrder < $1.sortOrder } }
+    func save(_ queue: DownloadQueue) { queueStore[queue.id] = queue }
+    func deleteQueue(id: String) {
+        queueStore[id] = nil
+        for (key, var download) in downloads where download.queueID == id {
+            download.queueID = DownloadQueue.defaultID
+            downloads[key] = download
+        }
+    }
 
     func all() -> [Download] { downloads.values.sorted { $0.createdAt > $1.createdAt } }
     func download(id: UUID) -> Download? { downloads[id] }
@@ -26,7 +37,7 @@ actor MemoryRepository: DownloadRepository, CheckpointStore {
 
     init() {
         scheduler = DownloadScheduler(
-            repository: repository, checkpoints: repository, transport: URLSessionHTTPTransport(),
+            repository: repository, checkpoints: repository, queues: repository, transport: URLSessionHTTPTransport(),
             retry: RetryPolicy(baseDelay: .milliseconds(5), maxDelay: .milliseconds(20)),
             checkpointInterval: .milliseconds(50),
             defaults: RocketDefaults(store: UserDefaults(suiteName: "SchedulerTests-\(UUID().uuidString)")!)

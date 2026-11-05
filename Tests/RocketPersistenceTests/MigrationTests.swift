@@ -29,3 +29,19 @@ import Testing
     #expect(try await repo.segments(downloadID: download.id) == segments)
     #expect(try await repo.download(id: download.id)?.receivedBytes == 70)
 }
+
+@Test func queuesPersistWithScheduleAndDeleteMovesDownloads() async throws {
+    let repo = GRDBDownloadRepository(db: try .inMemory())
+    #expect(try await repo.queues().map(\.id) == ["default"]) // created by v1 migration
+    let night = DownloadQueue(id: "night", name: "Night", maxActive: 2, schedule: QueueSchedule(start: 60, stop: 420, weekdays: [2, 3]), postAction: .sleep, speedLimit: 1_000_000, sortOrder: 1)
+    try await repo.save(night)
+    #expect(try await repo.queues().last == night)
+
+    var download = Download(url: URL(string: "https://example.com/a")!, destinationPath: "/tmp", fileName: "a")
+    download.queueID = "night"
+    try await repo.save(download)
+    try await repo.deleteQueue(id: "night")
+    try await repo.deleteQueue(id: "default") // ignored
+    #expect(try await repo.queues().map(\.id) == ["default"])
+    #expect(try await repo.download(id: download.id)?.queueID == "default")
+}
