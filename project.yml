@@ -54,6 +54,8 @@ targets:
         product: RocketIPC
       - package: Rocket
         product: RocketDesign
+      - package: Rocket
+        product: RocketUI
       - target: rocketd
         embed: true
         codeSign: true

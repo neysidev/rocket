@@ -47,3 +47,27 @@ public enum DownloadError: Error, Sendable, Hashable, Codable {
         return false
     }
 }
+
+public extension DownloadError {
+    /// The one place failures become user-facing text (TRD: errors mapped in one place, localized).
+    var userMessage: String {
+        switch self {
+        case .http(let status):
+            switch status {
+            case 401, 403: String(localized: "The server refused access (\(status)). Sign in and try again.")
+            case 404: String(localized: "The file was not found on the server (404).")
+            case 410: String(localized: "The link has expired (410).")
+            case 429, 503: String(localized: "The server is busy (\(status)).")
+            default: String(localized: "The server responded with error \(status).")
+            }
+        case .network: String(localized: "The network connection was lost.")
+        case .remoteFileChanged: String(localized: "The file changed on the server, so the download restarted.")
+        case .invalidRangeResponse: String(localized: "The server sent unexpected data.")
+        case .sizeMismatch: String(localized: "The downloaded file has the wrong size.")
+        case .diskFull: String(localized: "The disk is full.")
+        case .destinationNotWritable: String(localized: "Rocket can't write to the destination folder.")
+        case .invalidURL: String(localized: "Only http and https links are supported.")
+        case .io(let code): String(localized: "A file error occurred (\(code)).")
+        }
+    }
+}

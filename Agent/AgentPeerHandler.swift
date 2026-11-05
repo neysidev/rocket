@@ -47,6 +47,9 @@ struct AgentPeerHandler: XPCPeerHandler {
             case .cancel(let id):
                 try await scheduler.cancel(id: id)
                 return .ok
+            case let .remove(id, deleteFile):
+                try await scheduler.remove(id: id, deleteFile: deleteFile)
+                return .ok
             case .snapshot:
                 return .snapshot(try await scheduler.snapshot())
             }
@@ -57,8 +60,7 @@ struct AgentPeerHandler: XPCPeerHandler {
 
     private static func describe(_ error: any Error) -> String {
         switch error {
-        case DownloadError.http(let status): "Server responded \(status) \(HTTPURLResponse.localizedString(forStatusCode: status))"
-        case DownloadError.invalidURL: "Only http and https URLs are supported"
+        case let error as DownloadError: error.userMessage
         case SchedulerError.notFound(let id): "No download with id \(id)"
         default: error.localizedDescription
         }

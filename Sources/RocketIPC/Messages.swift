@@ -31,6 +31,7 @@ public enum Command: Codable, Sendable, Hashable {
     case pause(id: UUID)
     case resume(id: UUID)
     case cancel(id: UUID)
+    case remove(id: UUID, deleteFile: Bool)
     case snapshot
 }
 

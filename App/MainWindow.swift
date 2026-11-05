@@ -1,50 +1,35 @@
 import RocketDesign
+import RocketUI
 import SwiftUI
 
-/// Placeholder shell: sidebar → list → (inspector later). Features land here from v0.1.
+/// Sidebar (status filters) → download list. The inspector arrives with FR-APP-02.
 struct MainWindow: View {
-    @State private var selection: String? = "All downloads"
+    @Bindable var downloads: DownloadsModel
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
-                Section("Status") {
-                    Label("All downloads", systemImage: "tray.full").tag("All downloads")
-                    Label("Active", systemImage: "arrow.down").tag("Active")
-                    Label("Completed", systemImage: "checkmark.circle").tag("Completed")
-                    Label("Failed", systemImage: "exclamationmark.triangle").tag("Failed")
-                }
-                Section("Queues") {
-                    Label("Default", systemImage: "list.bullet").tag("Default")
-                }
-            }
-            .navigationSplitViewColumnWidth(RocketSize.sidebarWidth)
-            .safeAreaInset(edge: .bottom) { AgentStatusView().padding(RocketSpace.s4) }
+            DownloadSidebar(model: downloads) { AgentStatusView() }
+                .navigationSplitViewColumnWidth(RocketSize.sidebarWidth)
         } detail: {
-            EmptyState()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RocketColor.canvas)
+            DownloadListView(model: downloads)
         }
+        .searchable(text: $downloads.search, placement: .toolbar, prompt: "Filter")
         .toolbar {
             ToolbarItem { Button("Add", systemImage: "plus") {}.disabled(true) }
+            ToolbarItem {
+                if downloads.hasRunning || !downloads.hasPaused {
+                    Button("Pause All", systemImage: "pause") { Task { await downloads.pauseAll() } }
+                        .disabled(!downloads.hasRunning)
+                } else {
+                    Button("Resume All", systemImage: "play") { Task { await downloads.resumeAll() } }
+                }
+            }
         }
-    }
-}
-
-struct EmptyState: View {
-    var body: some View {
-        VStack(spacing: RocketSpace.s3) {
-            Image(systemName: "arrow.down.circle")
-                .font(.system(size: 28))
-                .foregroundStyle(RocketColor.textSecondary)
-            Text("No downloads yet")
-                .font(.rocketHeadline)
-                .foregroundStyle(RocketColor.textPrimary)
-            Text("Paste a link to start downloading.")
-                .font(.rocketBody)
-                .foregroundStyle(RocketColor.textSecondary)
+        .alert("Rocket", isPresented: Binding(get: { downloads.alert != nil }, set: { if !$0 { downloads.alert = nil } })) {
+            Button("OK") { downloads.alert = nil }
+        } message: {
+            Text(downloads.alert ?? "")
         }
-        .padding(RocketSpace.s6)
     }
 }
 

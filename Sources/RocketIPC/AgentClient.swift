@@ -7,8 +7,13 @@ public enum AgentClientError: Error, Sendable {
     case timedOut
 }
 
+/// Sends commands to the agent; `AgentClient` over XPC, fakes in tests.
+public protocol AgentCommanding: Sendable {
+    func send(_ command: Command) async throws -> Reply
+}
+
 /// XPC client used by the app and CLI to talk to `rocketd`.
-public final class AgentClient: Sendable {
+public final class AgentClient: AgentCommanding {
     private let session: XPCSession
 
     public init() throws {
@@ -19,8 +24,12 @@ public final class AgentClient: Sendable {
         session.cancel(reason: "Client released")
     }
 
+    public func send(_ command: Command) async throws -> Reply {
+        try await send(command, timeout: .seconds(45))
+    }
+
     /// Sends a command and waits for the reply. After a timeout the session is cancelled; create a new client.
-    public func send(_ command: Command, timeout: Duration = .seconds(45)) async throws -> Reply {
+    public func send(_ command: Command, timeout: Duration) async throws -> Reply {
         // XPC keeps a reply pending while launchd cannot start the agent, and cancelling the session does
         // not fail it, so the timeout resumes the continuation itself. The lock makes sure only one side does.
         let resumed = OSAllocatedUnfairLock(initialState: false)

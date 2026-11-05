@@ -90,6 +90,23 @@ public actor DownloadScheduler {
         try await repository.save(download)
     }
 
+    /// Removes the download from the list. Unfinished work is cancelled; a completed file is moved to the
+    /// Trash only when `deleteFile` is set (FR-APP-07).
+    public func remove(id: UUID, deleteFile: Bool) async throws {
+        if let task = running[id] {
+            stopping[id] = .cancelled
+            task.cancel()
+            await task.value
+        }
+        let download = try await existing(id)
+        try? FileManager.default.removeItem(at: download.partFileURL)
+        if deleteFile, download.state == .completed {
+            try? FileManager.default.trashItem(at: download.fileURL, resultingItemURL: nil)
+        }
+        try await checkpoints.saveCheckpoint(downloadID: id, segments: [])
+        try await repository.delete(id: id)
+    }
+
     /// Downloads with live progress for running ones.
     public func snapshot() async throws -> [Download] {
         var downloads = try await repository.all()

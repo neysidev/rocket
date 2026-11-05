@@ -14,7 +14,7 @@ final class AgentConnection {
     }
 
     private(set) var status: Status = .connecting
-    private var client: AgentClient?
+    private(set) var client: AgentClient?
     private let service = SMAppService.agent(plistName: "io.github.neysidev.rocket.agent.plist")
 
     func connect() async {

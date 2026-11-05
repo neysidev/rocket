@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "RocketPersistence", targets: ["RocketPersistence"]),
         .library(name: "RocketIPC", targets: ["RocketIPC"]),
         .library(name: "RocketDesign", targets: ["RocketDesign"]),
+        .library(name: "RocketUI", targets: ["RocketUI"]),
         .executable(name: "rocket", targets: ["RocketCLI"]),
     ],
     dependencies: [
@@ -31,6 +32,8 @@ let package = Package(
         .target(name: "RocketIPC", dependencies: ["RocketCore"]),
         // UI layer
         .target(name: "RocketDesign"),
+        // App screens and their view models; the app target is only the composition root.
+        .target(name: "RocketUI", dependencies: ["RocketCore", "RocketIPC", "RocketDesign"]),
 
         // The app and rocketd are built by Rocket.xcodeproj (see project.yml); the CLI builds here too for `swift run rocket`.
         .executableTarget(
@@ -48,5 +51,6 @@ let package = Package(
         .testTarget(name: "RocketNetworkingTests", dependencies: ["RocketNetworking", "RocketTestServer"]),
         .testTarget(name: "RocketPersistenceTests", dependencies: ["RocketPersistence"]),
         .testTarget(name: "RocketIPCTests", dependencies: ["RocketIPC"]),
+        .testTarget(name: "RocketUITests", dependencies: ["RocketUI"]),
     ]
 )
