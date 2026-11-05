@@ -130,7 +130,7 @@ public struct SettingsView: View {
             }
             .padding(.horizontal, RocketSpace.s3)
             .frame(width: 200)
-            .background(RocketColor.sidebar)
+            .rocketSidebarBackground()
             .overlay(alignment: .trailing) { Rectangle().fill(RocketColor.border).frame(width: 1) }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -188,7 +188,7 @@ struct GeneralSettings: View {
                         choosingFolder = true
                     } label: {
                         HStack(spacing: RocketSpace.s2 + 2) {
-                            Image(systemName: "folder").foregroundStyle(RocketColor.textSecondary)
+                            RocketIcon(.folder, size: 14).foregroundStyle(RocketColor.textSecondary)
                             Text(settings.folder.lastPathComponent)
                         }
                     }

@@ -121,7 +121,7 @@ public struct AddDownloadsSheet: View {
             choosingFolder = true
         } label: {
             HStack(spacing: RocketSpace.s2 + 2) {
-                Image(systemName: "folder").foregroundStyle(RocketColor.textSecondary)
+                RocketIcon(.folder, size: 14).foregroundStyle(RocketColor.textSecondary)
                 Text(model.folder.lastPathComponent).lineLimit(1).truncationMode(.middle)
             }
         }

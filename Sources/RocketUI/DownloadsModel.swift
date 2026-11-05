@@ -180,7 +180,7 @@ public final class DownloadsModel {
     public internal(set) var rules: [DownloadRule] = []
     /// Per-download speed samples for the last 60 s (5 Hz), for the detail view's chart.
     public private(set) var speedSamples: [UUID: [Double]] = [:]
-    /// Download whose details sheet is open.
+    /// Download open in the inspector. Independent of checkbox selection.
     public var detailsID: UUID?
     /// The toolbar search field is expanded (⌘F).
     public var isSearching = false
@@ -362,6 +362,7 @@ public final class DownloadsModel {
         speedSamples = speedSamples.filter { ids.contains($0.key) }
         samples = samples.filter { ids.contains($0.key) }
         selection.formIntersection(ids)
+        if let detailsID, !ids.contains(detailsID) { self.detailsID = nil }
         if next != items {
             items = next
             onUpdate?()
@@ -417,6 +418,12 @@ public final class DownloadsModel {
 
     public func download(_ id: UUID) -> Download? { items.first { $0.id == id }?.download }
 
+    /// Opens the inspector without changing which rows are checked.
+    public func inspect(_ id: UUID) {
+        detailsID = id
+    }
+
+    /// Menu and command-palette path: check this download and open it.
     public func showDetails(_ id: UUID) {
         selection = [id]
         detailsID = id

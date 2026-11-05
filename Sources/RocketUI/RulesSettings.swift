@@ -20,7 +20,7 @@ struct RulesSettings: View {
                     editing = DownloadRule(name: "")
                 } label: {
                     HStack(spacing: RocketSpace.s2 + 1) {
-                        Image(systemName: "plus").font(.system(size: 10.5, weight: .semibold))
+                        RocketIcon(.plus, size: 12)
                         Text("New Rule")
                     }
                 }
@@ -28,8 +28,7 @@ struct RulesSettings: View {
             }
             if model.rules.isEmpty {
                 VStack(spacing: RocketSpace.s3) {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .font(.system(size: 15))
+                    RocketIcon(.filter, size: 16)
                         .foregroundStyle(RocketColor.textSecondary)
                         .frame(width: 36, height: 36)
                         .rocketCard(fill: RocketColor.control, radius: 10)
@@ -87,8 +86,7 @@ private struct RuleRow: View {
 
     var body: some View {
         HStack(spacing: RocketSpace.s4) {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11, weight: .medium))
+            RocketIcon(.grip, size: 13)
                 .foregroundStyle(RocketColor.textTertiary)
                 .opacity(hovering ? 1 : 0.4)
             Toggle(isOn: Binding(get: { rule.enabled }, set: { enabled in
@@ -109,12 +107,10 @@ private struct RuleRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: RocketSpace.s1) {
-                Button("Edit", systemImage: "pencil", action: edit)
-                    .buttonStyle(.rocketIcon)
-                    .rocketTooltip(String(localized: "Edit"))
-                Button("Delete", systemImage: "trash") { Task { await model.deleteRule(rule.id) } }
-                    .buttonStyle(IconButtonStyle(role: .destructive))
-                    .rocketTooltip(String(localized: "Delete"))
+                RocketIconButton(String(localized: "Edit"), icon: .pencil, action: edit)
+                RocketIconButton(String(localized: "Delete"), icon: .trash, role: .destructive) {
+                    Task { await model.deleteRule(rule.id) }
+                }
             }
             .opacity(hovering ? 1 : 0)
             .offset(x: hovering ? 0 : 4)
@@ -184,15 +180,15 @@ struct RuleEditor: View {
                                     choosingFolder = true
                                 } label: {
                                     HStack(spacing: RocketSpace.s2 + 2) {
-                                        Image(systemName: "folder").foregroundStyle(RocketColor.textSecondary)
+                                        RocketIcon(.folder, size: 13).foregroundStyle(RocketColor.textSecondary)
                                         Text(rule.action.folderPath.map { URL(filePath: $0).lastPathComponent } ?? String(localized: "Default folder"))
                                     }
                                 }
                                 .buttonStyle(RocketButtonStyle(.secondary, size: .small))
                                 if rule.action.folderPath != nil {
-                                    Button("Clear", systemImage: "xmark") { rule.action.folderPath = nil }
-                                        .buttonStyle(IconButtonStyle(size: 22))
-                                        .rocketTooltip(String(localized: "Use the default folder"))
+                                    RocketIconButton(String(localized: "Use the default folder"), icon: .close, size: 22) {
+                                        rule.action.folderPath = nil
+                                    }
                                 }
                             }
                         }

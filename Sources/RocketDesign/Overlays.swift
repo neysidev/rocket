@@ -343,8 +343,7 @@ public struct RocketMenuContent: View {
         let tint = !item.isEnabled ? RocketColor.textTertiary : item.role == .destructive ? RocketColor.danger : RocketColor.textPrimary
         return HStack(spacing: RocketSpace.s3) {
             if hasSymbols {
-                Image(systemName: item.symbol ?? "circle")
-                    .font(.system(size: 12, weight: .regular))
+                RocketIcon(symbol: item.symbol ?? "doc", size: 14)
                     .foregroundStyle(item.role == .destructive ? RocketColor.danger : RocketColor.textSecondary)
                     .opacity(item.symbol == nil ? 0 : 1)
                     .frame(width: 16)
@@ -355,11 +354,10 @@ public struct RocketMenuContent: View {
                 Text(shortcut).font(.rocketCaption).foregroundStyle(RocketColor.textTertiary)
             }
             if item.isChecked {
-                Image(systemName: "checkmark").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(RocketColor.accentText)
+                RocketIcon(.check, size: 12).foregroundStyle(RocketColor.accentText)
             }
             if !item.children.isEmpty {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
+                RocketIcon(.chevronRight, size: 11)
                     .foregroundStyle(RocketColor.textTertiary)
                     .rotationEffect(.degrees(expanded.contains(item.id) ? 90 : 0))
                     .rocketAnimation(RocketMotion.fast, value: expanded.contains(item.id))
@@ -498,8 +496,7 @@ public struct RocketSelect<Value: Hashable>: View {
             HStack(spacing: RocketSpace.s3) {
                 Text(current).lineLimit(1)
                 Spacer(minLength: compact ? 0 : RocketSpace.s4)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 8.5, weight: .bold))
+                RocketIcon(.chevronUpDown, size: 11)
                     .foregroundStyle(RocketColor.textTertiary)
             }
         }

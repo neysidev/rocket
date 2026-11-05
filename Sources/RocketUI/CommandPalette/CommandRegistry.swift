@@ -175,7 +175,7 @@ enum CommandRegistry {
             model.filter = .all
             model.showInsights = false
             model.search = ""
-            model.selection = [download.id]
+            model.inspect(download.id)
             model.isCommandPaletteOpen = false
         }
     }

@@ -91,8 +91,7 @@ public struct RocketCheckboxStyle: ToggleStyle {
                     .fill(configuration.isOn ? RocketColor.accent : RocketColor.control)
                     .overlay(shape.strokeBorder(configuration.isOn ? .clear : RocketColor.borderStrong))
                     .overlay {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 9, weight: .bold))
+                        RocketIcon(.check, size: 10)
                             .foregroundStyle(.white)
                             .opacity(configuration.isOn ? 1 : 0)
                             .scaleEffect(configuration.isOn ? 1 : 0.6)
@@ -133,7 +132,7 @@ public struct RocketStepper: View {
 
     public var body: some View {
         HStack(spacing: 0) {
-            Button("Decrease", systemImage: "minus") { value = max(range.lowerBound, value - 1) }
+            Button { value = max(range.lowerBound, value - 1) } label: { RocketIcon(.minus, size: 12) }
                 .buttonStyle(IconButtonStyle(size: RocketSize.controlSmall))
                 .disabled(value <= range.lowerBound)
             Text("\(value)")
@@ -143,7 +142,7 @@ public struct RocketStepper: View {
                 .frame(minWidth: 28)
                 .contentTransition(.numericText(value: Double(value)))
                 .animation(RocketMotion.fast, value: value)
-            Button("Increase", systemImage: "plus") { value = min(range.upperBound, value + 1) }
+            Button { value = min(range.upperBound, value + 1) } label: { RocketIcon(.plus, size: 12) }
                 .buttonStyle(IconButtonStyle(size: RocketSize.controlSmall))
                 .disabled(value >= range.upperBound)
         }
@@ -201,7 +200,7 @@ public struct RocketSegmented<Value: Hashable>: View {
                 } label: {
                     Group {
                         if iconOnly, let symbol = segment.symbol {
-                            Image(systemName: symbol).frame(width: 26)
+                            RocketIcon(symbol: symbol, size: 14).frame(width: 28)
                         } else {
                             Text(segment.title).padding(.horizontal, RocketSpace.s3)
                         }
@@ -252,8 +251,7 @@ public struct RocketDisclosure<Content: View>: View {
                 isExpanded.toggle()
             } label: {
                 HStack(spacing: RocketSpace.s2 + 2) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
+                    RocketIcon(.chevronRight, size: 11)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     Text(title)
                 }

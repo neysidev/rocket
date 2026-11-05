@@ -401,8 +401,7 @@ public struct FileTile: View {
 
     public var body: some View {
         let shape = RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
-        Image(systemName: symbol)
-            .font(.system(size: size * 0.4, weight: .regular))
+        RocketIcon(symbol: symbol, size: size * 0.55)
             .foregroundStyle(RocketColor.textSecondary)
             .frame(width: size, height: size)
             .background(RocketColor.control, in: shape)
@@ -440,8 +439,7 @@ public struct RocketMark: View {
     }
 
     public var body: some View {
-        Image(systemName: "arrow.down")
-            .font(.system(size: size * 0.5, weight: .bold))
+        RocketIcon(.arrowDown, size: size * 0.55)
             .foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(

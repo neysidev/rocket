@@ -3,8 +3,9 @@ import RocketCore
 import RocketDesign
 import SwiftUI
 
-/// The main window's content column: header, filter bar, then the list or grid.
-/// Click selects (⌘ toggles, ⇧ extends), ↑↓ move, Space pauses/resumes, ⌫ removes, double-click or Return shows details.
+/// The main window's content column: header, filter bar, then a table or grid.
+/// A row opens the inspector. Checkboxes select (⌘ toggles, ⇧ extends). ↑↓ move the inspector,
+/// Space pauses or resumes, ⌫ removes, double-click opens a finished file.
 public struct DownloadListView: View {
     @Bindable var model: DownloadsModel
     /// Row or card a dragged download would land in front of (queue views).
@@ -18,46 +19,56 @@ public struct DownloadListView: View {
     }
 
     public var body: some View {
-        let items = model.visibleItems
-        let positions = model.queuePositions
-        VStack(spacing: 0) {
-            ContentHeader(model: model, count: items.count)
-            if showsFilterBar { FilterBar(model: model) }
-            Group {
-                if !model.hasLoaded, model.items.isEmpty {
-                    VStack(spacing: RocketSpace.s4) {
-                        RocketSpinner(size: 18)
-                        Text("Loading downloads…")
-                            .font(.rocketBody)
-                            .foregroundStyle(RocketColor.textSecondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .rocketTransition(RocketTransition.content)
-                } else if items.isEmpty {
-                    EmptyStateView(model: model)
-                        .rocketTransition(RocketTransition.content)
-                } else {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            if model.viewMode == .grid { grid(items, positions: positions) } else { list(items, positions: positions) }
-                        }
-                        // Dropped on empty space: move to the end of the queue.
-                        .dropDestination(for: String.self) { ids, _ in reorder(ids, before: nil) }
-                        .focusable()
-                        .focusEffectDisabled()
-                        .focused($focused)
-                        .modifier(DownloadKeys(model: model, items: items, anchor: $anchor, columns: model.viewMode == .grid) { id in
-                            proxy.scrollTo(id, anchor: .center)
-                        })
-                    }
-                    .rocketTransition(RocketTransition.content)
+        GeometryReader { proxy in
+            let columns = DownloadTableColumns(width: proxy.size.width)
+            let items = model.visibleItems
+            let positions = model.queuePositions
+            VStack(spacing: 0) {
+                ContentHeader(model: model, count: items.count, compact: proxy.size.width < 640)
+                if !model.selection.isEmpty {
+                    BulkToolbar(model: model)
+                        .rocketTransition(RocketTransition.reveal)
                 }
+                if showsFilterBar { FilterBar(model: model) }
+                Group {
+                    if !model.hasLoaded, model.items.isEmpty {
+                        VStack(spacing: RocketSpace.s4) {
+                            RocketSpinner(size: 18)
+                            Text("Loading downloads…")
+                                .font(.rocketBody)
+                                .foregroundStyle(RocketColor.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .rocketTransition(RocketTransition.content)
+                    } else if items.isEmpty {
+                        EmptyStateView(model: model)
+                            .rocketTransition(RocketTransition.content)
+                    } else {
+                        VStack(spacing: 0) {
+                            if model.viewMode == .list { TableHeader(model: model, items: items, columns: columns) }
+                            ScrollViewReader { scroll in
+                                ScrollView {
+                                    if model.viewMode == .grid { grid(items, positions: positions) } else { list(items, positions: positions, columns: columns) }
+                                }
+                                .dropDestination(for: String.self) { ids, _ in reorder(ids, before: nil) }
+                                .focusable()
+                                .focusEffectDisabled()
+                                .focused($focused)
+                                .modifier(DownloadKeys(model: model, items: items, anchor: $anchor, columns: model.viewMode == .grid) { id in
+                                    scroll.scrollTo(id, anchor: .center)
+                                })
+                            }
+                        }
+                        .rocketTransition(RocketTransition.content)
+                    }
+                }
+                .id(contentPhase)
+                .rocketAnimation(RocketMotion.standard, value: contentPhase)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .id(contentPhase)
-            .rocketAnimation(RocketMotion.standard, value: contentPhase)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            .background(RocketColor.canvas)
         }
-        .background(RocketColor.canvas)
     }
 
     private var showsFilterBar: Bool {
@@ -70,45 +81,71 @@ public struct DownloadListView: View {
         return "list-\(model.viewMode)-\(String(describing: model.filter))"
     }
 
-    private func list(_ items: [DownloadItem], positions: [UUID: Int]) -> some View {
-        LazyVStack(spacing: 2) {
+    private func list(_ items: [DownloadItem], positions: [UUID: Int], columns: DownloadTableColumns) -> some View {
+        LazyVStack(spacing: 0) {
             ForEach(items) { item in
-                DownloadRow(item: item, model: model, queuePosition: positions[item.id], isSelected: model.selection.contains(item.id))
-                    .id(item.id)
-                    .overlay(alignment: .top) {
-                        if dropTarget == item.id {
-                            Capsule().fill(RocketColor.accent).frame(height: 2).offset(y: -2).padding(.horizontal, RocketSpace.s3)
-                                .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .center)))
-                        }
+                DownloadRow(
+                    item: item, model: model, queuePosition: positions[item.id],
+                    isSelected: model.selection.contains(item.id), isInspected: model.detailsID == item.id, columns: columns,
+                    onOpen: { open(item) }, onToggle: { toggle(item) }, onExtend: { extend(item, items: items) }
+                )
+                .id(item.id)
+                .overlay(alignment: .top) {
+                    if dropTarget == item.id {
+                        Rectangle().fill(RocketColor.accent).frame(height: 2)
+                            .transition(.opacity)
                     }
-                    .rocketTransition(RocketTransition.list)
-                    .modifier(ItemInteractions(item: item, items: items, model: model, anchor: $anchor, dropTarget: $dropTarget,
-                                               focused: $focused, isQueue: isQueue, reorder: reorder))
+                }
+                .rocketTransition(RocketTransition.list)
+                .modifier(ItemInteractions(item: item, model: model, dropTarget: $dropTarget, isQueue: isQueue, reorder: reorder))
             }
         }
         .rocketAnimation(RocketMotion.standard, value: items.map(\.id))
-        .padding(.horizontal, RocketSpace.s3)
-        .padding(.vertical, RocketSpace.s3)
     }
 
     private func grid(_ items: [DownloadItem], positions: [UUID: Int]) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 210, maximum: 290), spacing: RocketSpace.s4)], spacing: RocketSpace.s4) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 300), spacing: RocketSpace.s4)], spacing: RocketSpace.s4) {
             ForEach(items) { item in
-                DownloadCard(item: item, model: model, queuePosition: positions[item.id], isSelected: model.selection.contains(item.id))
-                    .id(item.id)
-                    .overlay(alignment: .leading) {
-                        if dropTarget == item.id {
-                            Capsule().fill(RocketColor.accent).frame(width: 2).offset(x: -RocketSpace.s3 + 2)
-                                .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .center)))
-                        }
+                DownloadCard(
+                    item: item, model: model, queuePosition: positions[item.id],
+                    isSelected: model.selection.contains(item.id), isInspected: model.detailsID == item.id,
+                    onOpen: { open(item) }, onToggle: { toggle(item) }, onExtend: { extend(item, items: items) }
+                )
+                .id(item.id)
+                .overlay(alignment: .leading) {
+                    if dropTarget == item.id {
+                        Capsule().fill(RocketColor.accent).frame(width: 2).offset(x: -RocketSpace.s3 + 2)
+                            .transition(.opacity)
                     }
-                    .rocketTransition(RocketTransition.list)
-                    .modifier(ItemInteractions(item: item, items: items, model: model, anchor: $anchor, dropTarget: $dropTarget,
-                                               focused: $focused, isQueue: isQueue, reorder: reorder))
+                }
+                .rocketTransition(RocketTransition.list)
+                .modifier(ItemInteractions(item: item, model: model, dropTarget: $dropTarget, isQueue: isQueue, reorder: reorder))
             }
         }
         .rocketAnimation(RocketMotion.standard, value: items.map(\.id))
         .padding(RocketSpace.s5)
+    }
+
+    private func open(_ item: DownloadItem) {
+        focused = true
+        anchor = item.id
+        model.inspect(item.id)
+    }
+
+    private func toggle(_ item: DownloadItem) {
+        focused = true
+        anchor = item.id
+        if model.selection.contains(item.id) { model.selection.remove(item.id) } else { model.selection.insert(item.id) }
+    }
+
+    private func extend(_ item: DownloadItem, items: [DownloadItem]) {
+        focused = true
+        guard let anchor, let from = items.firstIndex(where: { $0.id == anchor }),
+              let to = items.firstIndex(where: { $0.id == item.id }) else {
+            toggle(item)
+            return
+        }
+        model.selection = Set(items[min(from, to)...max(from, to)].map(\.id))
     }
 
     private func reorder(_ strings: [String], before: UUID?) -> Bool {
@@ -126,14 +163,12 @@ public struct DownloadListView: View {
     }
 }
 
-/// Click, double-click, drag (to reorder or onto a sidebar queue) and right-click for one row or card.
+/// Drag (to reorder or onto a sidebar queue) and right-click for one row or card.
+/// Opening and checking happen on the row's own controls, so those hits don't overlap.
 private struct ItemInteractions: ViewModifier {
     let item: DownloadItem
-    let items: [DownloadItem]
     let model: DownloadsModel
-    @Binding var anchor: UUID?
     @Binding var dropTarget: UUID?
-    var focused: FocusState<Bool>.Binding
     let isQueue: Bool
     let reorder: ([String], UUID?) -> Bool
 
@@ -149,36 +184,16 @@ private struct ItemInteractions: ViewModifier {
                     if targeted { dropTarget = item.id } else if dropTarget == item.id { dropTarget = nil }
                 }
             }
-            .onTapGesture { click() }
             .rocketContextMenu(onOpen: {
                 if !model.selection.contains(item.id) { model.selection = [item.id] }
             }, sections: {
                 DownloadMenu.sections(ids: model.selection.contains(item.id) ? model.selection : [item.id], model: model)
             })
     }
-
-    private func click() {
-        focused.wrappedValue = true
-        if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
-            model.showDetails(item.id)
-            return
-        }
-        let flags = NSEvent.modifierFlags
-        if flags.contains(.command) {
-            if model.selection.contains(item.id) { model.selection.remove(item.id) } else { model.selection.insert(item.id) }
-        } else if flags.contains(.shift), let anchor, let from = items.firstIndex(where: { $0.id == anchor }),
-                  let to = items.firstIndex(where: { $0.id == item.id }) {
-            model.selection = Set(items[min(from, to)...max(from, to)].map(\.id))
-            return
-        } else {
-            model.selection = [item.id]
-        }
-        anchor = item.id
-    }
 }
 
-/// ↑↓ (←→ in the grid) move the selection, ⇧ extends it, Return shows details, Space toggles, ⌫ removes,
-/// ⌘A selects all, ⌘V adds, Esc clears the selection. Keyboard moves never animate.
+/// ↑↓ (←→ in the grid) move the inspector, ⇧ extends the checkbox selection, Return opens details,
+/// Space pauses or resumes, ⌫ removes, ⌘A selects all, ⌘V adds, Esc clears the selection then the inspector.
 private struct DownloadKeys: ViewModifier {
     let model: DownloadsModel
     let items: [DownloadItem]
@@ -193,24 +208,34 @@ private struct DownloadKeys: ViewModifier {
                 return move(step, extend: press.modifiers.contains(.shift))
             }
             .onKeyPress(.return) {
-                guard model.selection.count == 1, let id = model.selection.first else { return .ignored }
-                model.showDetails(id)
+                if model.selection.count == 1, let id = model.selection.first {
+                    model.inspect(id)
+                    return .handled
+                }
+                guard let anchor else { return .ignored }
+                model.inspect(anchor)
                 return .handled
             }
             .onKeyPress(.space) {
-                let ids = model.selection
+                let ids = actedOn
+                guard !ids.isEmpty else { return .ignored }
                 Task { await model.toggle(ids) }
                 return .handled
             }
             .onKeyPress(.escape) {
-                guard !model.selection.isEmpty else { return .ignored }
-                model.selection = []
+                if !model.selection.isEmpty {
+                    model.selection = []
+                    return .handled
+                }
+                guard model.detailsID != nil else { return .ignored }
+                model.detailsID = nil
                 return .handled
             }
             .onCommand(#selector(NSResponder.selectAll(_:))) { model.selection = Set(items.map(\.id)) }
             .onPasteCommand(of: [.plainText, .url]) { _ in model.beginAdding() }
             .onDeleteCommand {
-                let ids = model.selection
+                let ids = actedOn
+                guard !ids.isEmpty else { return }
                 Task { await model.remove(ids) }
             }
     }
@@ -220,10 +245,16 @@ private struct DownloadKeys: ViewModifier {
         let ids = items.map(\.id)
         let cursor = anchor.flatMap { ids.firstIndex(of: $0) } ?? ids.lastIndex { model.selection.contains($0) }
         let index = cursor.map { min(max(0, $0 + step), ids.count - 1) } ?? (step > 0 ? 0 : ids.count - 1)
-        if extend { model.selection.insert(ids[index]) } else { model.selection = [ids[index]] }
+        if extend { model.selection.insert(ids[index]) } else { model.inspect(ids[index]) }
         anchor = ids[index]
         reveal(ids[index])
         return .handled
+    }
+
+    /// Checkbox selection when there is one; otherwise the open download.
+    private var actedOn: Set<UUID> {
+        if !model.selection.isEmpty { return model.selection }
+        return model.detailsID.map { [$0] } ?? []
     }
 }
 
@@ -231,6 +262,7 @@ private struct DownloadKeys: ViewModifier {
 private struct ContentHeader: View {
     @Bindable var model: DownloadsModel
     let count: Int
+    var compact = false
 
     var body: some View {
         HStack(spacing: RocketSpace.s3) {
@@ -245,7 +277,7 @@ private struct ContentHeader: View {
                 .contentTransition(.numericText(value: Double(count)))
             if case .queue(let id) = model.filter { queueControls(id) }
             Spacer(minLength: RocketSpace.s4)
-            HeaderSearchField(model: model)
+            HeaderSearchField(model: model, compact: compact)
             filterMenu
             if !isQueue { sortMenu }
             RocketSegmented(selection: $model.viewMode, segments: DownloadViewMode.allCases.map {
@@ -290,14 +322,15 @@ private struct ContentHeader: View {
                 ]),
             ]
         } label: {
-            Label("Filter", systemImage: "line.3.horizontal.decrease")
+            RocketIcon(.filter, size: 15)
                 .overlay(alignment: .topTrailing) {
                     if model.hasRefinements {
-                        Circle().fill(RocketColor.accent).frame(width: 6, height: 6).offset(x: 3, y: -2)
+                        Circle().fill(RocketColor.accent).frame(width: 6, height: 6).offset(x: 4, y: -3)
                     }
                 }
         }
         .buttonStyle(IconButtonStyle(isActive: model.hasRefinements))
+        .accessibilityLabel(String(localized: "Filter"))
         .rocketTooltip(String(localized: "Filter by type, source, size and date"))
     }
 
@@ -307,39 +340,40 @@ private struct ContentHeader: View {
                 RocketMenuItem(sort.title, checked: model.sort == sort) { model.sort = sort }
             })]
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.up.arrow.down").font(.system(size: 10.5, weight: .semibold))
-                Text(model.sort.title)
-            }
+            RocketIcon(.sort, size: 15)
         }
-        .buttonStyle(RocketButtonStyle(.ghost, size: .small))
+        .buttonStyle(IconButtonStyle(isActive: model.sort != .newest))
         .accessibilityLabel("Sort by \(model.sort.title)")
+        .rocketTooltip(String(localized: "Sort by \(model.sort.title)"))
     }
 
     @ViewBuilder
     private func queueControls(_ id: String) -> some View {
         if let queue = model.queues.first(where: { $0.id == id }), let schedule = queue.schedule {
-            Label(schedule.summary, systemImage: "clock")
-                .font(.rocketCaption)
-                .foregroundStyle(RocketColor.textSecondary)
+            if !compact {
+                HStack(spacing: 6) {
+                    RocketIcon(.clock, size: 12).foregroundStyle(RocketColor.textSecondary)
+                    Text(schedule.summary)
+                        .font(.rocketCaption)
+                        .foregroundStyle(RocketColor.textSecondary)
+                        .lineLimit(1)
+                }
                 .padding(.horizontal, RocketSpace.s3)
-                .frame(height: 20)
+                .frame(height: 22)
                 .background(RocketColor.control, in: Capsule())
-                .lineLimit(1)
+            }
         }
         if model.queueIsRunning(id) {
-            Button("Pause Queue", systemImage: "pause") { Task { await model.pauseQueue(id) } }
-                .buttonStyle(.rocketIcon)
-                .rocketTooltip(String(localized: "Pause every download in this queue"))
+            RocketIconButton(String(localized: "Pause every download in this queue"), icon: .pause) {
+                Task { await model.pauseQueue(id) }
+            }
         } else {
-            Button("Resume Queue", systemImage: "play") { Task { await model.resumeQueue(id) } }
-                .buttonStyle(.rocketIcon)
-                .rocketTooltip(String(localized: "Resume this queue's paused downloads"))
+            RocketIconButton(String(localized: "Resume this queue's paused downloads"), icon: .play) {
+                Task { await model.resumeQueue(id) }
+            }
         }
         if let queue = model.queues.first(where: { $0.id == id }) {
-            Button("Edit Queue", systemImage: "slider.horizontal.3") { model.editingQueue = queue }
-                .buttonStyle(.rocketIcon)
-                .rocketTooltip(String(localized: "Edit queue"))
+            RocketIconButton(String(localized: "Edit queue"), icon: .sliders) { model.editingQueue = queue }
         }
     }
 }
@@ -356,8 +390,11 @@ private struct FilterBar: View {
                 ForEach(categories, id: \.self) { category in
                     Button {
                         model.category = model.category == category ? nil : category
-                    } label: {
-                        Label(category.title, systemImage: category.symbol)
+                    }                     label: {
+                        HStack(spacing: 5) {
+                            RocketIcon(symbol: category.symbol, size: 12).foregroundStyle(RocketColor.textTertiary)
+                            Text(category.title)
+                        }
                     }
                     .buttonStyle(PillButtonStyle(selected: model.category == category))
                 }
@@ -404,7 +441,7 @@ private struct Chip: View {
         Button(action: remove) {
             HStack(spacing: 5) {
                 Text(title)
-                Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(RocketColor.textTertiary)
+                RocketIcon(.close, size: 9).foregroundStyle(RocketColor.textTertiary)
             }
         }
         .buttonStyle(PillButtonStyle(selected: true))
@@ -418,8 +455,7 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: RocketSpace.s4) {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .regular))
+            RocketIcon(symbol: symbol, size: 18)
                 .foregroundStyle(RocketColor.textSecondary)
                 .frame(width: 44, height: 44)
                 .rocketCard(radius: 12)
@@ -484,11 +520,13 @@ struct EmptyStateView: View {
 /// Downloads can be dropped on a queue to move them there.
 public struct DownloadSidebar<Footer: View>: View {
     @Bindable var model: DownloadsModel
+    var compact = false
     let footer: Footer
     @State private var dropQueue: String?
 
-    public init(model: DownloadsModel, @ViewBuilder footer: () -> Footer) {
+    public init(model: DownloadsModel, compact: Bool = false, @ViewBuilder footer: () -> Footer) {
         self.model = model
+        self.compact = compact
         self.footer = footer()
     }
 
@@ -497,78 +535,84 @@ public struct DownloadSidebar<Footer: View>: View {
             // Room for the traffic lights; drags the window like a title bar.
             Color.clear.frame(height: 36).rocketWindowDragArea()
             HStack(spacing: RocketSpace.s3) {
-                RocketMark(size: 20)
-                Text("Rocket").font(.system(size: 13, weight: .semibold)).foregroundStyle(RocketColor.textPrimary)
-                Spacer()
-                SettingsLink {
-                    Label("Settings", systemImage: "gearshape")
+                RocketMark(size: 22)
+                if !compact {
+                    Text("Rocket").font(.system(size: 13, weight: .semibold)).foregroundStyle(RocketColor.textPrimary)
+                    Spacer()
                 }
-                .buttonStyle(.rocketIcon)
-                .rocketTooltip(String(localized: "Settings"), shortcut: "⌘,")
+                SettingsLink { RocketIcon(.gear, size: 15) }
+                    .buttonStyle(.rocketIcon)
+                    .accessibilityLabel(String(localized: "Settings"))
+                    .rocketTooltip(String(localized: "Settings"), shortcut: "⌘,")
             }
-            .padding(.leading, RocketSpace.s4)
-            .padding(.trailing, RocketSpace.s3)
-            .padding(.bottom, RocketSpace.s4)
+            .padding(.leading, compact ? RocketSpace.s2 : RocketSpace.s5)
+            .padding(.trailing, compact ? RocketSpace.s2 : RocketSpace.s3)
+            .padding(.bottom, RocketSpace.s5)
             Button {
                 model.beginAdding()
             } label: {
-                HStack(spacing: RocketSpace.s3) {
-                    Image(systemName: "plus").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(RocketColor.textSecondary)
-                    Text("New Download")
-                    Spacer(minLength: 0)
-                    Keycap("⌘N")
+                if compact {
+                    RocketIcon(.plus, size: 15).frame(maxWidth: .infinity)
+                } else {
+                    HStack(spacing: RocketSpace.s3) {
+                        RocketIcon(.plus, size: 13).foregroundStyle(RocketColor.textSecondary)
+                        Text("New Download")
+                        Spacer(minLength: 0)
+                        Keycap("⌘N")
+                    }
                 }
             }
             .buttonStyle(RocketButtonStyle(.secondary, fullWidth: true))
-            .padding(.horizontal, RocketSpace.s3)
+            .accessibilityLabel(String(localized: "New Download"))
+            .rocketTooltip(compact ? String(localized: "New Download") : "", shortcut: compact ? "⌘N" : nil)
+            .padding(.horizontal, compact ? RocketSpace.s2 : RocketSpace.s4)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(SidebarFilter.statuses) { filter in
                         SidebarRow(title: filter.title, symbol: filter.symbol, count: model.count(filter),
-                                   isSelected: model.filter == filter && !model.showInsights, live: filter == .active && model.isDownloading) {
+                                   isSelected: model.filter == filter && !model.showInsights, live: filter == .active && model.isDownloading,
+                                   compact: compact) {
                             withAnimation(RocketMotion.standard) { model.filter = filter; model.showInsights = false }
                         }
                     }
                     SidebarRow(title: String(localized: "Insights"), symbol: "chart.bar", count: 0,
-                               isSelected: model.showInsights) {
+                               isSelected: model.showInsights, compact: compact) {
                         withAnimation(RocketMotion.standard) { model.showInsights = true }
                     }
-                    .padding(.top, RocketSpace.s2)
+                    .padding(.top, RocketSpace.s3)
                     HStack {
-                        Text("Queues").rocketEyebrow()
+                        if !compact { Text("Queues").rocketEyebrow() }
                         Spacer()
-                        Button("New Queue", systemImage: "plus") { model.newQueue() }
-                            .buttonStyle(IconButtonStyle(size: 20))
-                            .rocketTooltip(String(localized: "New queue"))
+                        RocketIconButton(String(localized: "New queue"), icon: .plus, size: 22) { model.newQueue() }
                     }
-                    .padding(.leading, RocketSpace.s3)
-                    .padding(.top, RocketSpace.s5)
+                    .padding(.leading, compact ? 0 : RocketSpace.s3)
+                    .padding(.top, RocketSpace.s6)
                     .padding(.bottom, RocketSpace.s2)
                     ForEach(model.queues) { queue in
                         queueRow(queue)
                     }
                 }
-                .padding(.horizontal, RocketSpace.s3)
+                .padding(.horizontal, compact ? RocketSpace.s2 : RocketSpace.s3)
                 .padding(.vertical, RocketSpace.s4)
             }
             .scrollIndicators(.never)
 
             VStack(alignment: .leading, spacing: RocketSpace.s3) {
                 footer
-                ActivityFooter(model: model)
+                ActivityFooter(model: model, compact: compact)
             }
             .padding(RocketSpace.s3)
         }
         .frame(maxHeight: .infinity)
-        .background(RocketColor.sidebar)
+        .rocketSidebarBackground()
         .overlay(alignment: .trailing) { Rectangle().fill(RocketColor.border).frame(width: 1) }
     }
 
     private func queueRow(_ queue: DownloadQueue) -> some View {
         SidebarRow(title: queue.name, symbol: queue.schedule == nil ? "tray" : "calendar.badge.clock",
-                   count: model.count(.queue(queue.id)),                    isSelected: model.filter == .queue(queue.id) && !model.showInsights,
-                   isDropTarget: dropQueue == queue.id) {
+                   count: model.count(.queue(queue.id)), isSelected: model.filter == .queue(queue.id) && !model.showInsights,
+                   isDropTarget: dropQueue == queue.id, compact: compact) {
             withAnimation(RocketMotion.standard) { model.filter = .queue(queue.id); model.showInsights = false }
         }
         .rocketTooltip(queue.schedule?.summary ?? "")
@@ -609,31 +653,37 @@ struct SidebarRow: View {
     let isSelected: Bool
     var isDropTarget = false
     var live = false
+    var compact = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: RocketSpace.s3 + 1) {
-                Image(systemName: symbol)
-                    .font(.system(size: 12.5, weight: .regular))
+            HStack(spacing: RocketSpace.s3) {
+                RocketIcon(symbol: symbol, size: 15)
                     .foregroundStyle(isSelected ? RocketColor.textPrimary : RocketColor.textSecondary)
                     .frame(width: 16)
-                Text(title)
-                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
-                    .foregroundStyle(isSelected || hovering ? RocketColor.textPrimary : RocketColor.textSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: RocketSpace.s2)
-                if live { Circle().fill(RocketColor.accent).frame(width: 6, height: 6) }
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(RocketColor.textTertiary)
-                        .contentTransition(.numericText(value: Double(count)))
+                    .overlay(alignment: .topTrailing) {
+                        if compact, live { Circle().fill(RocketColor.accent).frame(width: 5, height: 5).offset(x: 3, y: -2) }
+                    }
+                if !compact {
+                    Text(title)
+                        .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                        .foregroundStyle(isSelected || hovering ? RocketColor.textPrimary : RocketColor.textSecondary)
+                        .lineLimit(1)
+                    Spacer(minLength: RocketSpace.s2)
+                    if live { Circle().fill(RocketColor.accent).frame(width: 6, height: 6) }
+                    if count > 0 {
+                        Text("\(count)")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .monospacedDigit()
+                            .foregroundStyle(RocketColor.textTertiary)
+                            .contentTransition(.numericText(value: Double(count)))
+                    }
                 }
             }
-            .padding(.horizontal, RocketSpace.s3)
+            .padding(.horizontal, compact ? 0 : RocketSpace.s3)
+            .frame(maxWidth: compact ? .infinity : nil)
             .frame(height: RocketSize.sidebarRow)
             .background(isSelected ? RocketColor.selected : hovering ? RocketColor.hover : .clear,
                         in: RoundedRectangle(cornerRadius: RocketRadius.small + 1, style: .continuous))
@@ -649,6 +699,7 @@ struct SidebarRow: View {
         .rocketAnimation(RocketMotion.fast, value: hovering)
         .rocketAnimation(RocketMotion.fast, value: isSelected)
         .rocketAnimation(RocketMotion.fast, value: isDropTarget)
+        .rocketTooltip(compact ? (count > 0 ? "\(title)  \(count)" : title) : "")
         .accessibilityLabel("\(title), \(count)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -657,35 +708,33 @@ struct SidebarRow: View {
 /// Total speed and a sparkline while downloading; pause or resume everything.
 private struct ActivityFooter: View {
     let model: DownloadsModel
+    var compact = false
 
     var body: some View {
         HStack(spacing: RocketSpace.s3) {
             StatusGlyph(model.isDownloading ? .active(model.overallFraction) : model.hasPaused ? .paused(model.overallFraction) : .done, size: 12)
                 .opacity(model.items.isEmpty ? 0.4 : 1)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(model.isDownloading ? Format.speed(model.totalSpeed) : String(localized: "Idle"))
-                    .font(.rocketLabel)
-                    .monospacedDigit()
-                    .foregroundStyle(model.isDownloading ? RocketColor.textPrimary : RocketColor.textSecondary)
-                Text(summary)
-                    .font(.rocketCaption)
-                    .foregroundStyle(RocketColor.textTertiary)
-                    .lineLimit(1)
+            if !compact {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(model.isDownloading ? Format.speed(model.totalSpeed) : String(localized: "Idle"))
+                        .font(.rocketLabel)
+                        .monospacedDigit()
+                        .foregroundStyle(model.isDownloading ? RocketColor.textPrimary : RocketColor.textSecondary)
+                    Text(summary)
+                        .font(.rocketCaption)
+                        .foregroundStyle(RocketColor.textTertiary)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
             if model.hasRunning {
-                Button("Pause All", systemImage: "pause") { Task { await model.pauseAll() } }
-                    .buttonStyle(IconButtonStyle(size: 24))
-                    .rocketTooltip(String(localized: "Pause all"))
+                RocketIconButton(String(localized: "Pause all"), icon: .pause, size: 28) { Task { await model.pauseAll() } }
             } else if model.hasPaused {
-                Button("Resume All", systemImage: "play") { Task { await model.resumeAll() } }
-                    .buttonStyle(IconButtonStyle(size: 24))
-                    .rocketTooltip(String(localized: "Resume all"))
+                RocketIconButton(String(localized: "Resume all"), icon: .play, size: 28) { Task { await model.resumeAll() } }
             }
         }
         .padding(.horizontal, RocketSpace.s3)
-        .frame(height: 44)
-        .rocketCard()
+        .frame(height: 48)
         .accessibilityElement(children: .combine)
     }
 
@@ -700,14 +749,14 @@ private struct ActivityFooter: View {
 /// Magnifying-glass button that becomes a search field (⌘F); collapses when emptied and unfocused.
 private struct HeaderSearchField: View {
     @Bindable var model: DownloadsModel
+    var compact = false
     @FocusState private var focused: Bool
 
     var body: some View {
         Group {
             if model.isSearching || !model.search.isEmpty {
                 HStack(spacing: RocketSpace.s2 + 2) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11.5, weight: .medium))
+                    RocketIcon(.search, size: 13)
                         .foregroundStyle(RocketColor.textTertiary)
                     TextField("Search downloads", text: $model.search)
                         .textFieldStyle(.plain)
@@ -719,23 +768,21 @@ private struct HeaderSearchField: View {
                             return .handled
                         }
                     if !model.search.isEmpty {
-                        Button("Clear Search", systemImage: "xmark.circle.fill") { model.search = "" }
-                            .labelStyle(.iconOnly)
+                        Button { model.search = "" } label: { RocketIcon(.circleX, size: 13) }
                             .buttonStyle(.plain)
                             .foregroundStyle(RocketColor.textTertiary)
+                            .accessibilityLabel(String(localized: "Clear Search"))
                     }
                 }
                 .padding(.horizontal, RocketSpace.s3)
-                .frame(width: 200, height: RocketSize.iconButton)
+                .frame(width: compact ? 160 : 220, height: RocketSize.control)
                 .background(RocketColor.control, in: RoundedRectangle(cornerRadius: RocketRadius.small + 1, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: RocketRadius.small + 1, style: .continuous)
                     .strokeBorder(focused ? RocketColor.accent : RocketColor.border))
                 .onAppear { focused = true }
                 .rocketTransition(RocketTransition.reveal)
             } else {
-                Button("Search", systemImage: "magnifyingglass") { model.isSearching = true }
-                    .buttonStyle(.rocketIcon)
-                    .rocketTooltip(String(localized: "Search"), shortcut: "⌘F")
+                RocketIconButton(String(localized: "Search"), icon: .search, shortcut: "⌘F") { model.isSearching = true }
                     .rocketTransition(RocketTransition.reveal)
             }
         }
@@ -744,5 +791,115 @@ private struct HeaderSearchField: View {
         .onChange(of: focused) { _, isFocused in
             if !isFocused, model.search.isEmpty { model.isSearching = false }
         }
+    }
+}
+
+/// Column titles. Clicking one sorts, except inside a queue, which stays in run order.
+private struct TableHeader: View {
+    @Bindable var model: DownloadsModel
+    let items: [DownloadItem]
+    let columns: DownloadTableColumns
+
+    private var isQueue: Bool {
+        if case .queue = model.filter { return true }
+        return false
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            MacCheckbox(state: checkState, allowsMixed: true, label: String(localized: "Select all")) { toggleAll() }
+                .frame(width: DownloadTableColumns.check, height: 30)
+            sortButton("Name", sort: .name)
+                .padding(.leading, RocketSize.fileTileRow + 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if columns.status { sortButton("Status", sort: .status).frame(width: DownloadTableColumns.statusWidth, alignment: .leading) }
+            if columns.size { sortButton("Size", sort: .size, trailing: true).frame(width: DownloadTableColumns.sizeWidth, alignment: .trailing).padding(.trailing, RocketSpace.s3) }
+            if columns.progress { sortButton("Progress", sort: .progress).frame(width: DownloadTableColumns.progressWidth, alignment: .leading) }
+            if columns.speed {
+                Text("Speed")
+                    .frame(width: DownloadTableColumns.speedWidth, alignment: .trailing)
+                    .padding(.trailing, RocketSpace.s3)
+            }
+            if columns.date { sortButton("Added", sort: .newest, trailing: true).frame(width: DownloadTableColumns.dateWidth, alignment: .trailing) }
+            if columns.actions { Color.clear.frame(width: DownloadTableColumns.actionsWidth) }
+        }
+        .font(.rocketCaption)
+        .foregroundStyle(RocketColor.textTertiary)
+        .frame(height: 30)
+        .overlay(alignment: .bottom) { Rectangle().fill(RocketColor.border).frame(height: 1) }
+    }
+
+    private var checkState: NSControl.StateValue {
+        let visible = Set(items.map(\.id))
+        let selected = model.selection.intersection(visible)
+        if selected.isEmpty || visible.isEmpty { return .off }
+        return selected.count == visible.count ? .on : .mixed
+    }
+
+    private func toggleAll() {
+        let visible = Set(items.map(\.id))
+        if visible.isSubset(of: model.selection) { model.selection.subtract(visible) } else { model.selection.formUnion(visible) }
+    }
+
+    private func sortButton(_ title: LocalizedStringKey, sort: DownloadSort, trailing: Bool = false) -> some View {
+        let active = model.sort == sort || (sort == .newest && model.sort == .oldest)
+        return Button {
+            guard !isQueue else { return }
+            if sort == .newest { model.sort = model.sort == .newest ? .oldest : .newest } else { model.sort = sort }
+        } label: {
+            HStack(spacing: 4) {
+                if trailing, active, !isQueue { RocketIcon(.arrowDown, size: 9).rotationEffect(.degrees(model.sort == .oldest ? 180 : 0)) }
+                Text(title)
+                if !trailing, active, !isQueue { RocketIcon(.arrowDown, size: 9).rotationEffect(.degrees(model.sort == .oldest ? 180 : 0)) }
+            }
+            .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isQueue)
+    }
+}
+
+/// Actions for the checked rows. Buttons that don't apply to this selection are disabled.
+private struct BulkToolbar: View {
+    let model: DownloadsModel
+
+    var body: some View {
+        let ids = model.selection
+        let states = ids.compactMap { model.download($0)?.state }
+        HStack(spacing: 2) {
+            Text("\(ids.count) selected")
+                .font(.rocketLabel)
+                .monospacedDigit()
+                .foregroundStyle(RocketColor.textSecondary)
+                .padding(.trailing, RocketSpace.s2)
+            RocketIconButton(String(localized: "Pause"), icon: .pause) { Task { await model.pause(ids) } }
+                .disabled(!states.contains(where: \.isActive))
+            RocketIconButton(String(localized: "Resume"), icon: .play) { Task { await model.resume(ids) } }
+                .disabled(!states.contains { $0 == .paused || $0 == .failed })
+            RocketIconButton(String(localized: "Cancel"), icon: .circleX, role: .destructive) { Task { await model.cancel(ids) } }
+                .disabled(!states.contains { $0.isActive || $0 == .paused })
+            RocketIconButton(String(localized: "Show in Finder"), icon: .folder) { model.reveal(ids) }
+            RocketIconButton(String(localized: "Remove from List"), icon: .circleMinus) { Task { await model.remove(ids) } }
+            if states.contains(.completed) {
+                RocketIconButton(String(localized: "Move File to Trash"), icon: .trash, role: .destructive) {
+                    Task { await model.remove(ids, deleteFiles: true) }
+                }
+            }
+            RocketMenuButton(alignment: .leading) {
+                DownloadMenu.sections(ids: ids, model: model)
+            } label: {
+                RocketIcon(.ellipsis, size: 14)
+            }
+            .buttonStyle(.rocketIcon)
+            .accessibilityLabel(String(localized: "More"))
+            .rocketTooltip(String(localized: "More"))
+            Spacer(minLength: RocketSpace.s3)
+            RocketIconButton(String(localized: "Clear Selection"), icon: .close) { model.selection = [] }
+        }
+        .padding(.horizontal, RocketSpace.s4)
+        .frame(height: 44)
+        .background(RocketColor.raised.opacity(0.65))
+        .overlay(alignment: .bottom) { Rectangle().fill(RocketColor.border).frame(height: 1) }
     }
 }

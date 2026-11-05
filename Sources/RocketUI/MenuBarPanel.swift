@@ -50,20 +50,15 @@ public struct MenuBarPanel: View {
                 .contentTransition(.numericText())
             Spacer()
             if model.hasRunning {
-                Button("Pause All", systemImage: "pause") { Task { await model.pauseAll() } }
-                    .buttonStyle(.rocketIcon)
-                    .rocketTooltip(String(localized: "Pause all downloads"))
+                RocketIconButton(String(localized: "Pause all downloads"), icon: .pause) { Task { await model.pauseAll() } }
             } else {
-                Button("Resume All", systemImage: "play") { Task { await model.resumeAll() } }
-                    .buttonStyle(.rocketIcon)
+                RocketIconButton(String(localized: "Resume all downloads"), icon: .play) { Task { await model.resumeAll() } }
                     .disabled(!model.hasPaused)
-                    .rocketTooltip(String(localized: "Resume all downloads"))
             }
-            SettingsLink {
-                Label("Settings", systemImage: "gearshape")
-            }
-            .buttonStyle(.rocketIcon)
-            .rocketTooltip(String(localized: "Settings"), shortcut: "⌘,")
+            SettingsLink { RocketIcon(.gear, size: 15) }
+                .buttonStyle(.rocketIcon)
+                .accessibilityLabel(String(localized: "Settings"))
+                .rocketTooltip(String(localized: "Settings"), shortcut: "⌘,")
         }
         .padding(.horizontal, RocketSpace.s2)
     }
@@ -109,8 +104,7 @@ public struct MenuBarPanel: View {
 
     private var filterField: some View {
         HStack(spacing: RocketSpace.s3) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
+            RocketIcon(.search, size: 13)
                 .foregroundStyle(RocketColor.textTertiary)
             TextField("Filter downloads", text: $filter)
                 .textFieldStyle(.plain)
@@ -294,14 +288,11 @@ struct CompactRow: View {
     private var button: some View {
         switch download.state {
         case .paused, .failed:
-            Button("Resume", systemImage: "play") { Task { await model.resume([download.id]) } }
-                .buttonStyle(.rocketIcon)
+            RocketIconButton(String(localized: "Resume"), icon: .play, size: 24) { Task { await model.resume([download.id]) } }
         case .completed:
-            Button("Show in Finder", systemImage: "folder") { model.reveal([download.id]) }
-                .buttonStyle(.rocketIcon)
+            RocketIconButton(String(localized: "Show in Finder"), icon: .folder, size: 24) { model.reveal([download.id]) }
         default:
-            Button("Pause", systemImage: "pause") { Task { await model.pause([download.id]) } }
-                .buttonStyle(.rocketIcon)
+            RocketIconButton(String(localized: "Pause"), icon: .pause, size: 24) { Task { await model.pause([download.id]) } }
         }
     }
 }

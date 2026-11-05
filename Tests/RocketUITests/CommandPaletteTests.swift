@@ -1,3 +1,4 @@
+import Foundation
 import RocketCore
 @testable import RocketUI
 import Testing

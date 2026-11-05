@@ -4,16 +4,21 @@ import RocketCore
 import RocketDesign
 import SwiftUI
 
-/// Details for one download, shown in a modal: metrics, live segments, speed history, server details, errors and log (FR-APP-02).
+/// How the detail view is hosted. The inspector fills the trailing column; the dialog sizes to its content.
+public enum DetailLayout: Sendable { case dialog, inspector }
+
+/// Details for one download: metrics, live segments, speed history, server details, errors and log (FR-APP-02).
 public struct DownloadDetailView: View {
     let model: DownloadsModel
     let id: UUID
+    var layout: DetailLayout
     @State private var details: DownloadDetails?
     @Environment(\.rocketDismiss) private var dismiss
 
-    public init(model: DownloadsModel, id: UUID) {
+    public init(model: DownloadsModel, id: UUID, layout: DetailLayout = .dialog) {
         self.model = model
         self.id = id
+        self.layout = layout
     }
 
     private var item: DownloadItem? { model.items.first { $0.id == id } }
@@ -54,12 +59,10 @@ public struct DownloadDetailView: View {
                             section("Log") { LogList(entries: log) }
                         }
                     }
-                    .padding(RocketSpace.s6)
+                    .padding(layout == .inspector ? RocketSpace.s5 : RocketSpace.s6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                // Grows with its content (the log), then scrolls.
-                .frame(maxHeight: 560)
-                .fixedSize(horizontal: false, vertical: true)
+                .modifier(DetailScrollSizing(layout: layout))
             } else {
                 Text("This download was removed.")
                     .font(.rocketBody)
@@ -67,6 +70,7 @@ public struct DownloadDetailView: View {
                     .frame(maxWidth: .infinity, minHeight: 200)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: layout == .inspector ? .infinity : nil, alignment: .top)
         .task(id: id) {
             // 2 Hz is plenty for segments and the log; progress numbers come from the list's 5 Hz snapshot.
             while !Task.isCancelled {
@@ -91,24 +95,30 @@ public struct DownloadDetailView: View {
             Spacer(minLength: RocketSpace.s3)
             HStack(spacing: RocketSpace.s1) {
                 ForEach(RowAction.available(for: item.download).filter { ![.details, .viewError, .remove].contains($0) }, id: \.self) { action in
-                    Button(action.title, systemImage: action.symbol) { action.perform(on: item.download, model: model) }
-                        .buttonStyle(IconButtonStyle(role: action == .cancel ? .destructive : nil))
-                        .rocketTooltip(action.title)
+                    Button { action.perform(on: item.download, model: model) } label: {
+                        RocketIcon(symbol: action.symbol, size: 14)
+                    }
+                    .buttonStyle(IconButtonStyle(role: action == .cancel ? .destructive : nil))
+                    .accessibilityLabel(action.title)
+                    .rocketTooltip(action.title)
                 }
                 Rectangle().fill(RocketColor.border).frame(width: 1, height: 16).padding(.horizontal, RocketSpace.s2)
-                Button("Close", systemImage: "xmark") { dismiss() }
-                    .buttonStyle(.rocketIcon)
-                    .keyboardShortcut(.cancelAction)
-                    .rocketTooltip(String(localized: "Close"), shortcut: "esc")
+                RocketIconButton(String(localized: "Close"), icon: .close) { close() }
             }
         }
-        .padding(.horizontal, RocketSpace.s6)
+        .padding(.horizontal, layout == .inspector ? RocketSpace.s5 : RocketSpace.s6)
         .padding(.vertical, RocketSpace.s5)
+        .onExitCommand { close() }
         .overlay(alignment: .bottom) { Rectangle().fill(RocketColor.border).frame(height: 1) }
     }
 
+    private func close() {
+        model.detailsID = nil
+        dismiss()
+    }
+
     private func metrics(_ item: DownloadItem) -> some View {
-        HStack(spacing: RocketSpace.s3) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: layout == .inspector ? 120 : 140), spacing: RocketSpace.s3)], spacing: RocketSpace.s3) {
             metric(Format.bytes(item.download.receivedBytes), caption: item.download.totalBytes.map { "of \(Format.bytes($0))" } ?? "received")
             if item.download.state == .downloading {
                 let (value, unit) = Format.compactSpeed(item.speed)
@@ -162,7 +172,7 @@ public struct DownloadDetailView: View {
             Text(label)
                 .font(.rocketLabel)
                 .foregroundStyle(RocketColor.textSecondary)
-                .frame(width: 104, alignment: .leading)
+                .frame(width: layout == .inspector ? 88 : 104, alignment: .leading)
             Text(value)
                 .font(mono ? .rocketMono : .rocketBody)
                 .foregroundStyle(RocketColor.textPrimary)
@@ -172,12 +182,10 @@ public struct DownloadDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .rocketTooltip(value)
             if copyable {
-                Button("Copy", systemImage: "doc.on.doc") {
+                RocketIconButton(String(localized: "Copy"), icon: .copy, size: 22) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(value, forType: .string)
                 }
-                .buttonStyle(IconButtonStyle(size: 22))
-                .rocketTooltip(String(localized: "Copy"))
             }
         }
         .padding(.horizontal, RocketSpace.s4)
@@ -272,5 +280,18 @@ struct LogList: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .rocketCard(fill: RocketColor.control.opacity(0.5))
         .textSelection(.enabled)
+    }
+}
+
+/// The dialog grows with its content up to a cap. The inspector scrolls inside the column.
+private struct DetailScrollSizing: ViewModifier {
+    let layout: DetailLayout
+
+    func body(content: Content) -> some View {
+        if layout == .inspector {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            content.frame(maxHeight: 560).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

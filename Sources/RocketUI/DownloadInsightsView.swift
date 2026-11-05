@@ -73,7 +73,10 @@ public struct DownloadInsightsView: View {
                     BarMark(x: .value("Bytes", stats.bytesByCategory[category, default: 0]))
                         .foregroundStyle(RocketColor.chartNeutral)
                         .annotation(position: .overlay, alignment: .leading) {
-                            Label(category.title, systemImage: category.symbol)
+                            HStack(spacing: 5) {
+                                RocketIcon(symbol: category.symbol, size: 12).foregroundStyle(RocketColor.textTertiary)
+                                Text(category.title)
+                            }
                                 .font(.rocketCaption)
                                 .foregroundStyle(RocketColor.textPrimary)
                                 .padding(.leading, RocketSpace.s2)

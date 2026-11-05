@@ -45,17 +45,17 @@ struct CommandPaletteView: View {
 
     private var searchField: some View {
         HStack(spacing: RocketSpace.s3) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .medium))
+            RocketIcon(.search, size: 15)
                 .foregroundStyle(RocketColor.textTertiary)
             TextField("Search downloads and commands…", text: $palette.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($focused)
             if !palette.query.isEmpty {
-                Button("Clear", systemImage: "xmark.circle.fill") { palette.query = "" }
+                Button { palette.query = "" } label: { RocketIcon(.circleX, size: 14) }
                     .buttonStyle(.plain)
                     .foregroundStyle(RocketColor.textTertiary)
+                    .accessibilityLabel(String(localized: "Clear"))
             }
             Keycap("⌘K")
         }
@@ -117,8 +117,7 @@ struct CommandPaletteView: View {
 
     private var emptyState: some View {
         VStack(spacing: RocketSpace.s3) {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 28, weight: .light))
+            RocketIcon(.search, size: 28)
                 .foregroundStyle(RocketColor.textTertiary)
             Text("No results")
                 .font(.rocketHeadline)
@@ -172,8 +171,7 @@ private struct CommandPaletteRowView: View {
 
     var body: some View {
         HStack(spacing: RocketSpace.s3) {
-            Image(systemName: row.symbol)
-                .font(.system(size: 13, weight: .medium))
+            RocketIcon(symbol: row.symbol, size: 15)
                 .foregroundStyle(isSelected ? RocketColor.accentText : RocketColor.textSecondary)
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {

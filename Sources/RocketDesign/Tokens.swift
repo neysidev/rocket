@@ -20,40 +20,41 @@ private func dynamic(_ name: String, dark: UInt32, light: UInt32, darkAlpha: CGF
     return Color(nsColor: color)
 }
 
-/// Graphite neutrals with one warm accent, Ember. Dark first; light is a warm paper counterpart.
+/// Cursor-like neutrals: near-black canvas, hairline borders, one restrained blue.
+/// Dark first; light is a cool paper counterpart. Accent marks focus and live progress only.
 public enum RocketColor {
-    // Surfaces, back to front.
-    public static let sidebar = dynamic("surface.sidebar", dark: 0x0C0C0E, light: 0xF3F2EF)
-    public static let canvas = dynamic("surface.canvas", dark: 0x131315, light: 0xFCFCFB)
+    // Surfaces, back to front. Sidebar is a tint over system blur, so this value stays opaque for fallbacks.
+    public static let sidebar = dynamic("surface.sidebar", dark: 0x141414, light: 0xEFEFF2)
+    public static let canvas = dynamic("surface.canvas", dark: 0x181818, light: 0xF6F6F8)
     /// Cards, inputs at rest, grouped settings.
-    public static let raised = dynamic("surface.raised", dark: 0x19191C, light: 0xFFFFFF)
+    public static let raised = dynamic("surface.raised", dark: 0x202020, light: 0xFFFFFF)
     /// Menus, modals, tooltips: always above everything else.
-    public static let overlay = dynamic("surface.overlay", dark: 0x1D1D21, light: 0xFFFFFF)
+    public static let overlay = dynamic("surface.overlay", dark: 0x242424, light: 0xFFFFFF)
     /// Input fill, segmented track, keycaps, file tiles.
-    public static let control = dynamic("surface.control", dark: 0x232327, light: 0xF1F0ED)
+    public static let control = dynamic("surface.control", dark: 0x2A2A2A, light: 0xE7E7EB)
 
     // State fills, layered over any surface.
-    public static let hover = dynamic("fill.hover", dark: 0xFFFFFF, light: 0x000000, darkAlpha: 0.045, lightAlpha: 0.04)
-    public static let selected = dynamic("fill.selected", dark: 0xFFFFFF, light: 0x000000, darkAlpha: 0.08, lightAlpha: 0.065)
-    public static let scrim = dynamic("fill.scrim", dark: 0x000000, light: 0x18181A, darkAlpha: 0.5, lightAlpha: 0.22)
+    public static let hover = dynamic("fill.hover", dark: 0xFFFFFF, light: 0x000000, darkAlpha: 0.04, lightAlpha: 0.04)
+    public static let selected = dynamic("fill.selected", dark: 0xFFFFFF, light: 0x000000, darkAlpha: 0.08, lightAlpha: 0.06)
+    public static let scrim = dynamic("fill.scrim", dark: 0x000000, light: 0x18181A, darkAlpha: 0.45, lightAlpha: 0.18)
 
     // Strokes.
-    public static let border = dynamic("stroke.border", dark: 0xFFFFFF, light: 0x000000, darkAlpha: 0.07, lightAlpha: 0.08)
-    public static let borderStrong = dynamic("stroke.strong", dark: 0xFFFFFF, light: 0x000000, darkAlpha: 0.13, lightAlpha: 0.15)
+    public static let border = dynamic("stroke.border", dark: 0xFFFFFF, light: 0x000000, darkAlpha: 0.08, lightAlpha: 0.08)
+    public static let borderStrong = dynamic("stroke.strong", dark: 0xFFFFFF, light: 0x000000, darkAlpha: 0.14, lightAlpha: 0.14)
 
     // Text.
-    public static let textPrimary = dynamic("text.primary", dark: 0xEDEDEF, light: 0x1B1B1E)
-    public static let textSecondary = dynamic("text.secondary", dark: 0x9D9DA6, light: 0x62626B)
-    public static let textTertiary = dynamic("text.tertiary", dark: 0x66666E, light: 0x9B9BA3)
+    public static let textPrimary = dynamic("text.primary", dark: 0xE6E6E6, light: 0x1C1C1F)
+    public static let textSecondary = dynamic("text.secondary", dark: 0x9A9A9A, light: 0x5C5C66)
+    public static let textTertiary = dynamic("text.tertiary", dark: 0x6F6F6F, light: 0x8A8A94)
     /// Text and icons on the inverse fill (primary buttons, tooltips).
-    public static let textInverse = dynamic("text.inverse", dark: 0x111113, light: 0xFCFCFB)
-    public static let inverse = dynamic("fill.inverse", dark: 0xEDEDEF, light: 0x1B1B1E)
+    public static let textInverse = dynamic("text.inverse", dark: 0x141414, light: 0xF6F6F8)
+    public static let inverse = dynamic("fill.inverse", dark: 0xE6E6E6, light: 0x1C1C1F)
 
-    // Ember: what is in flight now, focus, and the "on" state of controls. Never a button fill.
-    public static let accent = dynamic("accent.ember", dark: 0xFF8A4C, light: 0xE5651F)
-    /// Ember as text or small icons on light surfaces (4.5:1).
-    public static let accentText = dynamic("accent.emberText", dark: 0xFF9C66, light: 0xB24A0E)
-    public static let accentSoft = dynamic("accent.soft", dark: 0xFF8A4C, light: 0xE5651F, darkAlpha: 0.14, lightAlpha: 0.12)
+    // Restrained blue: live progress, focus, links. Never a button fill.
+    public static let accent = dynamic("accent.signal", dark: 0x5B8DEF, light: 0x2F6FE0)
+    /// Accent as text or small icons (4.5:1 on canvas).
+    public static let accentText = dynamic("accent.signalText", dark: 0x8EB2FF, light: 0x1D4FBF)
+    public static let accentSoft = dynamic("accent.soft", dark: 0x5B8DEF, light: 0x2F6FE0, darkAlpha: 0.16, lightAlpha: 0.12)
 
     public static let success = dynamic("status.success", dark: 0x4CC38A, light: 0x1E8A56)
     public static let danger = dynamic("status.danger", dark: 0xF0565C, light: 0xCE3A40)
@@ -75,26 +76,31 @@ public enum RocketSpace {
 }
 
 public enum RocketRadius {
-    public static let modal: CGFloat = 14
+    public static let modal: CGFloat = 12
     public static let card: CGFloat = 10
-    public static let control: CGFloat = 7
-    public static let small: CGFloat = 5
+    public static let control: CGFloat = 8
+    public static let small: CGFloat = 6
 }
 
 public enum RocketSize {
-    public static let control: CGFloat = 30
-    public static let controlSmall: CGFloat = 24
-    public static let iconButton: CGFloat = 26
+    public static let control: CGFloat = 32
+    public static let controlSmall: CGFloat = 26
+    public static let iconButton: CGFloat = 28
     public static let fileTile: CGFloat = 28
-    public static let fileTileRow: CGFloat = 34
-    public static let fileTileCard: CGFloat = 52
+    public static let fileTileRow: CGFloat = 22
+    public static let fileTileCard: CGFloat = 44
+    /// Menu-bar rows. The main window table uses `tableRow`.
     public static let row: CGFloat = 52
-    public static let sidebarRow: CGFloat = 28
-    public static let progressBarRow: CGFloat = 4
+    public static let tableRow: CGFloat = 36
+    public static let sidebarRow: CGFloat = 32
+    public static let progressBarRow: CGFloat = 3
     public static let progressBarDetail: CGFloat = 6
     public static let keycapHeight: CGFloat = 18
-    public static let sidebarWidth: CGFloat = 228
-    public static let headerHeight: CGFloat = 52
+    public static let sidebarWidth: CGFloat = 248
+    /// Icon-only navigation when the window is narrow.
+    public static let sidebarRail: CGFloat = 68
+    public static let inspectorWidth: CGFloat = 340
+    public static let headerHeight: CGFloat = 56
     public static let menuBarPanelWidth: CGFloat = 360
 }
 
