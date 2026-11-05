@@ -36,19 +36,7 @@ public enum LinkExtractor {
 public final class AddDownloadsModel: Identifiable {
     public enum Phase { case input, review }
 
-    /// FR-ADD-03: what to do when a download is already in the list or its file already exists.
-    public enum Resolution: String, CaseIterable, Identifiable, Sendable {
-        case keepBoth, overwrite, skip, showExisting
-        public var id: Self { self }
-        public var title: String {
-            switch self {
-            case .keepBoth: String(localized: "Keep both")
-            case .overwrite: String(localized: "Replace existing file")
-            case .skip: String(localized: "Skip")
-            case .showExisting: String(localized: "Show existing")
-            }
-        }
-    }
+    public typealias Resolution = DuplicateResolution
 
     public enum Conflict: Equatable, Sendable {
         case inList(UUID)
@@ -61,7 +49,7 @@ public final class AddDownloadsModel: Identifiable {
         public var fileName: String
         public var info: RemoteFileInfo?
         public var error: String?
-        public var resolution: Resolution = .keepBoth
+        public var resolution: Resolution
         public var isProbing: Bool { info == nil && error == nil }
     }
 
@@ -84,10 +72,12 @@ public final class AddDownloadsModel: Identifiable {
     private let initialFolder: URL
     private let initialQueueID: String
     private let fileExists: (URL) -> Bool
+    private let defaultResolution: Resolution
 
     public init(
         text: String = "", folder: URL, connections: Int = 8, queueID: String = DownloadQueue.defaultID,
         queues: [DownloadQueue] = [], agent: (any AgentCommanding)?, existing: [Download],
+        defaultResolution: Resolution = RocketDefaults().defaultDuplicateResolution,
         fileExists: @escaping (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
     ) {
         self.text = text
@@ -100,6 +90,7 @@ public final class AddDownloadsModel: Identifiable {
         self.agent = agent
         self.existing = existing.filter { $0.state != .cancelled }
         self.fileExists = fileExists
+        self.defaultResolution = defaultResolution
     }
 
     public var links: [URL] { LinkExtractor.urls(in: text) }
@@ -124,7 +115,9 @@ public final class AddDownloadsModel: Identifiable {
 
     /// Probes every link through the agent, in parallel.
     public func review() async {
-        candidates = links.map { Candidate(url: $0, fileName: FileNameSanitizer.sanitize($0.lastPathComponent)) }
+        candidates = links.map {
+            Candidate(url: $0, fileName: FileNameSanitizer.sanitize($0.lastPathComponent), resolution: defaultResolution)
+        }
         phase = .review
         guard let agent else {
             for index in candidates.indices { candidates[index].error = String(localized: "Rocket's background agent is not running.") }

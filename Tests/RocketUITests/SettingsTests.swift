@@ -34,6 +34,14 @@ import Testing
         #expect(RocketDefaults(store: store).connections == 16)
     }
 
+    @Test func smartDefaultsPersist() {
+        let defaults = RocketDefaults(store: store)
+        defaults.retryMaxAttempts = 7
+        defaults.defaultDuplicateResolution = .skip
+        #expect(RocketDefaults(store: store).retryMaxAttempts == 7)
+        #expect(RocketDefaults(store: store).defaultDuplicateResolution == .skip)
+    }
+
     @Test func addSheetStartsFromSettings() {
         let settings = AppSettings(defaults: RocketDefaults(store: store))
         settings.folder = URL(filePath: "/tmp/elsewhere", directoryHint: .isDirectory)

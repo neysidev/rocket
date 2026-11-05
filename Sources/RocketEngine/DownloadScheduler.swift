@@ -17,7 +17,8 @@ public actor DownloadScheduler {
     private let onActivityChange: @Sendable (Bool) async -> Void
     private let transport: any HTTPTransport
     private let maxActive: Int
-    private let retry: RetryPolicy
+    /// When set (tests), overrides `RocketDefaults` for retry behavior.
+    private let retryOverride: RetryPolicy?
     private let checkpointInterval: Duration
     private let log = Rocket.logger("Engine")
 
@@ -42,7 +43,7 @@ public actor DownloadScheduler {
     public init(
         repository: any DownloadRepository, checkpoints: any CheckpointStore, queues: any QueueRepository,
         rules: (any RuleRepository)? = nil, contexts: (any RequestContextStore)? = nil,
-        transport: any HTTPTransport, maxActive: Int = 32, retry: RetryPolicy = RetryPolicy(),
+        transport: any HTTPTransport, maxActive: Int = 32, retry: RetryPolicy? = nil,
         checkpointInterval: Duration = .seconds(2), defaults: RocketDefaults = RocketDefaults(),
         now: @escaping @Sendable () -> Date = { .now },
         runPostAction: @escaping @Sendable (DownloadQueue) async -> Void = { _ in },
@@ -60,8 +61,12 @@ public actor DownloadScheduler {
         self.checkpoints = checkpoints
         self.transport = transport
         self.maxActive = maxActive
-        self.retry = retry
+        self.retryOverride = retry
         self.checkpointInterval = checkpointInterval
+    }
+
+    private func retryPolicy() -> RetryPolicy {
+        retryOverride ?? RetryPolicy(defaults: defaults)
     }
 
     /// Crash recovery: anything that was in flight when the agent died goes back to the queue.
@@ -430,7 +435,7 @@ public actor DownloadScheduler {
         let coordinator = DownloadCoordinator(
             url: download.finalURL ?? download.url, info: download.remoteInfo, file: file,
             segments: try await checkpoints.segments(downloadID: id), connections: download.connections,
-            transport: transport, retry: retry, limiters: limiters, context: context, onLog: logEntry, checkpointInterval: checkpointInterval,
+            transport: transport, retry: retryPolicy(), limiters: limiters, context: context, onLog: logEntry, checkpointInterval: checkpointInterval,
             onCheckpoint: { try await checkpoints.saveCheckpoint(downloadID: id, segments: $0) }
         )
         coordinators[id] = coordinator

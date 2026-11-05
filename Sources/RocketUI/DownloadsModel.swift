@@ -193,8 +193,12 @@ public final class DownloadsModel {
     public var sort: DownloadSort = .newest
     /// Refinements on top of the sidebar filter and search.
     public var category: FileCategory?
+    /// Filter by download host (smart source grouping).
+    public var sourceHost: String?
     public var sizeFilter: SizeFilter = .any
     public var dateFilter: DateFilter = .any
+    /// Download insights sheet (statistics and throughput).
+    public var showInsights = false
     public var viewMode: DownloadViewMode = DownloadViewMode(rawValue: UserDefaults.standard.string(forKey: "viewMode") ?? "") ?? .list {
         didSet { UserDefaults.standard.set(viewMode.rawValue, forKey: "viewMode") }
     }
@@ -225,6 +229,7 @@ public final class DownloadsModel {
         let matching = items.filter { item in
             filter.includes(item.download)
                 && (category == nil || item.category == category)
+                && (sourceHost == nil || DownloadSource.host(for: item.download.url) == sourceHost)
                 && sizeFilter.includes(item.download.totalBytes)
                 && dateFilter.includes(item.download.createdAt, now: now)
                 && (search.isEmpty || item.download.fileName.localizedCaseInsensitiveContains(search)
@@ -244,12 +249,20 @@ public final class DownloadsModel {
         }
     }
 
-    public var hasRefinements: Bool { category != nil || sizeFilter != .any || dateFilter != .any }
+    public var hasRefinements: Bool { category != nil || sourceHost != nil || sizeFilter != .any || dateFilter != .any }
 
     public func clearRefinements() {
         category = nil
+        sourceHost = nil
         sizeFilter = .any
         dateFilter = .any
+    }
+
+    public var statistics: DownloadStatistics { DownloadStatistics.compute(from: items.map(\.download)) }
+
+    /// Distinct hosts present in history, for source filters.
+    public var sourceHosts: [String] {
+        Array(Set(items.map { DownloadSource.host(for: $0.download.url) })).sorted()
     }
 
     /// 1-based place in line for each waiting download, per queue.
@@ -378,7 +391,7 @@ public final class DownloadsModel {
         adding = AddDownloadsModel(
             text: links.map(\.absoluteString).joined(separator: "\n"), folder: folder ?? settings.folder,
             connections: settings.connections, queueID: currentQueueID, queues: queues, agent: agent,
-            existing: items.map(\.download)
+            existing: items.map(\.download), defaultResolution: settings.defaultDuplicateResolution
         )
     }
 

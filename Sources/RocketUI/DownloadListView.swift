@@ -61,7 +61,7 @@ public struct DownloadListView: View {
     }
 
     private var showsFilterBar: Bool {
-        model.hasRefinements || Set(model.items.map(\.category)).count > 1
+        model.hasRefinements || Set(model.items.map(\.category)).count > 1 || model.sourceHosts.count > 1
     }
 
     private var contentPhase: String {
@@ -279,6 +279,11 @@ private struct ContentHeader: View {
                     .submenu(String(localized: "Date Added"), symbol: "calendar", children: DateFilter.allCases.map { date in
                         RocketMenuItem(date.title, checked: model.dateFilter == date) { model.dateFilter = date }
                     }),
+                    .submenu(String(localized: "Source"), symbol: "globe", children:
+                        [RocketMenuItem(String(localized: "Any Source"), checked: model.sourceHost == nil) { model.sourceHost = nil }]
+                            + model.sourceHosts.map { host in
+                                RocketMenuItem(host, checked: model.sourceHost == host) { model.sourceHost = host }
+                            }),
                 ]),
                 RocketMenuSection(items: [
                     RocketMenuItem(String(localized: "Clear Filters"), symbol: "xmark", enabled: model.hasRefinements) { model.clearRefinements() },
@@ -293,7 +298,7 @@ private struct ContentHeader: View {
                 }
         }
         .buttonStyle(IconButtonStyle(isActive: model.hasRefinements))
-        .rocketTooltip(String(localized: "Filter by type, size and date"))
+        .rocketTooltip(String(localized: "Filter by type, source, size and date"))
     }
 
     private var sortMenu: some View {
@@ -356,8 +361,12 @@ private struct FilterBar: View {
                     }
                     .buttonStyle(PillButtonStyle(selected: model.category == category))
                 }
-                if model.sizeFilter != .any || model.dateFilter != .any {
+                if model.sourceHost != nil || model.sizeFilter != .any || model.dateFilter != .any {
                     Rectangle().fill(RocketColor.border).frame(width: 1, height: 14).padding(.horizontal, RocketSpace.s2)
+                }
+                if let host = model.sourceHost {
+                    Chip(title: host) { model.sourceHost = nil }
+                        .rocketTransition(RocketTransition.reveal)
                 }
                 if model.sizeFilter != .any {
                     Chip(title: model.sizeFilter.title) { model.sizeFilter = .any }
@@ -376,6 +385,7 @@ private struct FilterBar: View {
         .rocketAnimation(RocketMotion.fast, value: model.category)
         .rocketAnimation(RocketMotion.fast, value: model.sizeFilter)
         .rocketAnimation(RocketMotion.fast, value: model.dateFilter)
+        .rocketAnimation(RocketMotion.fast, value: model.sourceHost)
     }
 
     /// Only categories that exist in the list, plus the selected one, so the bar stays short.
@@ -516,10 +526,15 @@ public struct DownloadSidebar<Footer: View>: View {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(SidebarFilter.statuses) { filter in
                         SidebarRow(title: filter.title, symbol: filter.symbol, count: model.count(filter),
-                                   isSelected: model.filter == filter, live: filter == .active && model.isDownloading) {
-                            withAnimation(RocketMotion.standard) { model.filter = filter }
+                                   isSelected: model.filter == filter && !model.showInsights, live: filter == .active && model.isDownloading) {
+                            withAnimation(RocketMotion.standard) { model.filter = filter; model.showInsights = false }
                         }
                     }
+                    SidebarRow(title: String(localized: "Insights"), symbol: "chart.bar", count: 0,
+                               isSelected: model.showInsights) {
+                        withAnimation(RocketMotion.standard) { model.showInsights = true }
+                    }
+                    .padding(.top, RocketSpace.s2)
                     HStack {
                         Text("Queues").rocketEyebrow()
                         Spacer()
@@ -552,9 +567,9 @@ public struct DownloadSidebar<Footer: View>: View {
 
     private func queueRow(_ queue: DownloadQueue) -> some View {
         SidebarRow(title: queue.name, symbol: queue.schedule == nil ? "tray" : "calendar.badge.clock",
-                   count: model.count(.queue(queue.id)), isSelected: model.filter == .queue(queue.id),
+                   count: model.count(.queue(queue.id)),                    isSelected: model.filter == .queue(queue.id) && !model.showInsights,
                    isDropTarget: dropQueue == queue.id) {
-            withAnimation(RocketMotion.standard) { model.filter = .queue(queue.id) }
+            withAnimation(RocketMotion.standard) { model.filter = .queue(queue.id); model.showInsights = false }
         }
         .rocketTooltip(queue.schedule?.summary ?? "")
         .dropDestination(for: String.self) { ids, _ in

@@ -162,6 +162,18 @@ private func download(_ name: String, _ state: DownloadState, received: Int64 = 
         for _ in 0..<20 { model.apply([], now: .now) }
         #expect(model.speedHistory.count == 16)
     }
+
+    @Test func sourceHostFilter() {
+        let model = DownloadsModel()
+        var a = Download(url: URL(string: "https://a.example/f")!, destinationPath: "/tmp", fileName: "f", state: .completed)
+        var b = Download(url: URL(string: "https://b.example/g")!, destinationPath: "/tmp", fileName: "g", state: .completed)
+        a.totalBytes = 1
+        b.totalBytes = 1
+        model.apply([a, b], now: .now)
+        model.sourceHost = "a.example"
+        #expect(model.visibleItems.count == 1)
+        #expect(model.visibleItems[0].download.fileName == "f")
+    }
 }
 
 @MainActor

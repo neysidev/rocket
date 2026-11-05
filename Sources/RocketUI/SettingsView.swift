@@ -38,6 +38,10 @@ public final class AppSettings {
     public var onWatchClipboardChange: ((Bool) -> Void)?
     public var onSoundEffectsChange: ((Bool) -> Void)?
     public var clipboardExtensionSet: Set<String> { Set(Self.extensions(clipboardExtensions)) }
+    public var retryMaxAttempts: Int { didSet { defaults.retryMaxAttempts = retryMaxAttempts } }
+    public var retryBaseDelaySeconds: Int { didSet { defaults.retryBaseDelaySeconds = retryBaseDelaySeconds } }
+    public var retryMaxDelaySeconds: Int { didSet { defaults.retryMaxDelaySeconds = retryMaxDelaySeconds } }
+    public var defaultDuplicateResolution: DuplicateResolution { didSet { defaults.defaultDuplicateResolution = defaultDuplicateResolution } }
     public private(set) var launchAtLogin = false
     public private(set) var launchAtLoginError: String?
 
@@ -54,6 +58,10 @@ public final class AppSettings {
         proxy = defaults.proxy
         watchClipboard = defaults.watchClipboard
         clipboardExtensions = defaults.clipboardExtensions.joined(separator: ", ")
+        retryMaxAttempts = defaults.retryMaxAttempts
+        retryBaseDelaySeconds = defaults.retryBaseDelaySeconds
+        retryMaxDelaySeconds = defaults.retryMaxDelaySeconds
+        defaultDuplicateResolution = defaults.defaultDuplicateResolution
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
@@ -82,11 +90,12 @@ public struct SettingsView: View {
     @State private var editingRule: DownloadRule?
 
     enum Page: CaseIterable {
-        case general, network, rules
+        case general, smart, network, rules
 
         var title: String {
             switch self {
             case .general: String(localized: "General")
+            case .smart: String(localized: "Smart Downloads")
             case .network: String(localized: "Network & Clipboard")
             case .rules: String(localized: "Rules")
             }
@@ -95,6 +104,7 @@ public struct SettingsView: View {
         var symbol: String {
             switch self {
             case .general: "gearshape"
+            case .smart: "sparkles"
             case .network: "network"
             case .rules: "line.3.horizontal.decrease"
             }
@@ -135,6 +145,8 @@ public struct SettingsView: View {
                         switch page {
                         case .general:
                             GeneralSettings(settings: model.settings, extra: extra) { rate in Task { await model.setGlobalLimit(rate) } }
+                        case .smart:
+                            SmartDownloadsSettings(settings: model.settings, model: model)
                         case .network:
                             NetworkSettings(settings: model.settings)
                         case .rules:
@@ -182,9 +194,6 @@ struct GeneralSettings: View {
                     }
                     .buttonStyle(RocketButtonStyle(.secondary, size: .small))
                     .rocketTooltip(settings.folder.path)
-                }
-                RocketFormRow(String(localized: "Sort into folders by type"), detail: String(localized: "Video, Archives, Documents, …")) {
-                    Toggle("Sort into folders by type", isOn: $settings.autoSort).labelsHidden().toggleStyle(.rocketSwitch)
                 }
                 RocketFormRow(String(localized: "Connections per download")) {
                     RocketSelect(String(localized: "Connections per download"), selection: $settings.connections,

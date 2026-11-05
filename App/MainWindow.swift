@@ -44,6 +44,9 @@ struct MainWindow: View {
                 }
             }
         }
+        .rocketModal(isPresented: Binding(get: { downloads.showInsights }, set: { downloads.showInsights = $0 })) {
+            DownloadInsightsView(model: downloads)
+        }
         .rocketAlert($downloads.alert)
         .onChange(of: downloads.alert) { _, message in
             if message != nil { soundEffects?.playWarning() }

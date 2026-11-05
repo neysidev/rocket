@@ -1,3 +1,5 @@
+import RocketCore
+
 /// Exponential backoff with jitter for transient failures (TRD: 1 s base, 60 s cap, 5 attempts).
 public struct RetryPolicy: Sendable {
     public var maxAttempts: Int
@@ -25,5 +27,13 @@ public struct RetryPolicy: Sendable {
     public func delay(forAttempt attempt: Int) -> Duration {
         let ceiling = ceiling(forAttempt: attempt)
         return ceiling / 2 + ceiling / 2 * Double.random(in: 0...1)
+    }
+
+    public init(defaults: RocketDefaults) {
+        self.init(
+            maxAttempts: defaults.retryMaxAttempts,
+            baseDelay: .seconds(defaults.retryBaseDelaySeconds),
+            maxDelay: .seconds(defaults.retryMaxDelaySeconds)
+        )
     }
 }

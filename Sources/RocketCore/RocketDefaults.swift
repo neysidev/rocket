@@ -17,7 +17,14 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
         static let dockProgress = "showDockProgress"
         static let watchClipboard = "watchClipboard"
         static let clipboardExtensions = "clipboardExtensions"
+        static let retryMaxAttempts = "retryMaxAttempts"
+        static let retryBaseDelaySeconds = "retryBaseDelaySeconds"
+        static let retryMaxDelaySeconds = "retryMaxDelaySeconds"
+        static let defaultDuplicateResolution = "defaultDuplicateResolution"
     }
+
+    public static let retryAttemptRange = 1...10
+    public static let retryDelayRange = 1...300
 
     /// File types the clipboard watcher offers by default (FR-INT-03).
     public static let defaultClipboardExtensions = [
@@ -93,5 +100,42 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
     public var soundEffectsEnabled: Bool {
         get { store.bool(forKey: Key.soundEffects) }
         nonmutating set { store.set(newValue, forKey: Key.soundEffects) }
+    }
+
+    /// Connection retries with exponential backoff (FR-ENG-08).
+    public var retryMaxAttempts: Int {
+        get {
+            let value = store.integer(forKey: Key.retryMaxAttempts)
+            return value == 0 ? 5 : min(max(value, Self.retryAttemptRange.lowerBound), Self.retryAttemptRange.upperBound)
+        }
+        nonmutating set { store.set(newValue, forKey: Key.retryMaxAttempts) }
+    }
+
+    public var retryBaseDelaySeconds: Int {
+        get {
+            let value = store.integer(forKey: Key.retryBaseDelaySeconds)
+            return value == 0 ? 1 : clampedDelay(value)
+        }
+        nonmutating set { store.set(clampedDelay(newValue), forKey: Key.retryBaseDelaySeconds) }
+    }
+
+    public var retryMaxDelaySeconds: Int {
+        get {
+            let value = store.integer(forKey: Key.retryMaxDelaySeconds)
+            return value == 0 ? 60 : clampedDelay(value)
+        }
+        nonmutating set { store.set(clampedDelay(newValue), forKey: Key.retryMaxDelaySeconds) }
+    }
+
+    /// When adding a download that already exists in the list or on disk.
+    public var defaultDuplicateResolution: DuplicateResolution {
+        get {
+            store.string(forKey: Key.defaultDuplicateResolution).flatMap(DuplicateResolution.init(rawValue:)) ?? .keepBoth
+        }
+        nonmutating set { store.set(newValue.rawValue, forKey: Key.defaultDuplicateResolution) }
+    }
+
+    private func clampedDelay(_ value: Int) -> Int {
+        min(max(value, Self.retryDelayRange.lowerBound), Self.retryDelayRange.upperBound)
     }
 }
