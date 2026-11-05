@@ -31,6 +31,9 @@ public actor DownloadScheduler {
     /// Queues that started work since they were last empty; their after-action fires when they run dry.
     private var busyQueues: Set<String> = []
     private var wasActive = false
+    /// Last 200 log entries per download. ponytail: in memory, lost when the agent restarts; persist with the
+    /// download if users need history across restarts.
+    private var logs: [UUID: [LogEntry]] = [:]
     private let defaults: RocketDefaults
     /// Why a running task is being stopped, so its cancellation lands in the right state.
     private var stopping: [UUID: DownloadState] = [:]
@@ -103,6 +106,8 @@ public actor DownloadScheduler {
         download.speedLimit = speedLimit ?? rule?.action.speedLimit
         download.queueID = queue
         try await repository.save(download)
+        log(download.id, "Added: \(info.totalBytes.map { $0.formatted(.byteCount(style: .file)) } ?? "size unknown"), \(info.acceptsRanges ? "resumable" : "no range support")")
+        if let rule { log(download.id, "Rule “\(rule.name)” applied") }
         log.info("Queued \(download.id, privacy: .public)")
         try await fill()
         return try await repository.download(id: download.id) ?? download
@@ -175,6 +180,27 @@ public actor DownloadScheduler {
 
     public var globalLimit: Int64? {
         get async { await globalLimiter.bytesPerSecond }
+    }
+
+    // MARK: Details
+
+    public func details(id: UUID) async throws -> DownloadDetails {
+        if let coordinator = coordinators[id] {
+            return DownloadDetails(
+                segments: await coordinator.segments, activeConnections: await coordinator.activeConnections,
+                connectionLimit: await coordinator.connectionLimit, log: logs[id] ?? []
+            )
+        }
+        return DownloadDetails(segments: try await checkpoints.segments(downloadID: id), activeConnections: 0, connectionLimit: nil, log: logs[id] ?? [])
+    }
+
+    private func log(_ id: UUID, _ message: String, isError: Bool = false) {
+        logs[id, default: []].append(LogEntry(message: message, isError: isError))
+        if logs[id]!.count > 200 { logs[id]!.removeFirst(logs[id]!.count - 200) }
+    }
+
+    private func appendLog(_ id: UUID, _ entry: LogEntry) {
+        log(id, entry.message, isError: entry.isError)
     }
 
     // MARK: Rules
@@ -353,13 +379,17 @@ public actor DownloadScheduler {
         let limiter = BandwidthLimiter(bytesPerSecond: download.speedLimit)
         downloadLimiters[id] = limiter
         let limiters = [globalLimiter, queueLimiters[download.queueID], limiter].compactMap { $0 }
+        let logEntry: @Sendable (LogEntry) -> Void = { entry in Task { await self.appendLog(id, entry) } }
         let coordinator = DownloadCoordinator(
             url: download.finalURL ?? download.url, info: download.remoteInfo, file: file,
             segments: try await checkpoints.segments(downloadID: id), connections: download.connections,
-            transport: transport, retry: retry, limiters: limiters, checkpointInterval: checkpointInterval,
+            transport: transport, retry: retry, limiters: limiters, onLog: logEntry, checkpointInterval: checkpointInterval,
             onCheckpoint: { try await checkpoints.saveCheckpoint(downloadID: id, segments: $0) }
         )
         coordinators[id] = coordinator
+        log(id, coordinator.isSegmented
+            ? "Downloading with up to \(download.connections) connections"
+            : "Downloading over a single connection (server does not support ranges)")
         try await set(&download, .downloading)
         try await coordinator.run()
 
@@ -373,6 +403,7 @@ public actor DownloadScheduler {
         download.receivedBytes = total
         download.completedAt = .now
         try await set(&download, .completed)
+        log(id, "Completed: saved as \(final.lastPathComponent)")
         log.info("Completed \(id, privacy: .public)")
     }
 
@@ -383,6 +414,7 @@ public actor DownloadScheduler {
             if let reason = stopping[id] {
                 // Pause keeps the part file; cancel() cleans up after us.
                 download.state = reason
+                log(id, reason == .queued ? "Queue window closed; waiting for the next one" : "\(reason.rawValue.capitalized)")
             } else if error is CancellationError {
                 download.state = .queued // agent shutting down: pick it up on next start
             } else if case DownloadError.remoteFileChanged = error, download.failure != .remoteFileChanged {
@@ -393,10 +425,12 @@ public actor DownloadScheduler {
                 download.receivedBytes = 0
                 download.failure = .remoteFileChanged
                 download.state = .queued
+                log(id, "File changed on the server; restarting from the beginning", isError: true)
                 log.info("Restarting \(id, privacy: .public): file changed on server")
             } else {
                 download.failure = error as? DownloadError ?? .network(code: (error as? URLError)?.code.rawValue ?? -1)
                 download.state = .failed
+                log(id, "Failed: \(download.failure?.userMessage ?? String(describing: error))", isError: true)
                 log.error("Failed \(id, privacy: .public): \(String(describing: error), privacy: .public)")
             }
             try await repository.save(download)

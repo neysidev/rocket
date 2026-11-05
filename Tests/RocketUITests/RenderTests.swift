@@ -103,4 +103,36 @@ import Testing
                 .write(to: URL(filePath: dir).appending(path: "panel-\(appearance.rawValue).png"))
         }
     }
+
+    @Test func detailPartsRender() throws {
+        let mib: Int64 = 1 << 20
+        let segments = [
+            Segment(start: 0, end: 4 * mib - 1, received: 4 * mib), Segment(start: 4 * mib, end: 6 * mib - 1, received: mib),
+            Segment(start: 6 * mib, end: 8 * mib - 1, received: mib / 2), Segment(start: 8 * mib, end: 16 * mib - 1, received: 3 * mib),
+        ]
+        let samples = (0..<300).map { 40_000_000 + 30_000_000 * sin(Double($0) / 25) }
+        let view = VStack(alignment: .leading, spacing: 16) {
+            SegmentsBar(segments: segments, total: 16 * mib, live: true)
+            SpeedChart(samples: samples)
+            LogList(entries: [
+                LogEntry(message: "Added: 16777216 bytes, resumable"),
+                LogEntry(message: "Downloading with up to 8 connections"),
+                LogEntry(message: "Connection 3: The server is busy (503). Retrying in 1.2s (attempt 2 of 5)."),
+                LogEntry(message: "Failed: The disk is full.", isError: true),
+            ])
+        }
+        .padding(16)
+        .frame(width: 300)
+        .background(RocketColor.canvas)
+        .environment(\.colorScheme, .dark)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        var image: CGImage?
+        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { image = renderer.cgImage }
+        let rendered = try #require(image)
+        if let dir = ProcessInfo.processInfo.environment["ROCKET_RENDER_DIR"] {
+            try NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:])!
+                .write(to: URL(filePath: dir).appending(path: "detail.png"))
+        }
+    }
 }

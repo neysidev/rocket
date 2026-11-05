@@ -38,7 +38,7 @@ import Testing
     @Test func slowWorkersAreRebalanced() async throws {
         let server = try await RocketTestServer()
         let size = 12 * Int(SegmentPlanner.mebibyte)
-        let (data, coordinator) = try await download(server.url("/file/\(size)?delayMs=5&delayFrom=\(size * 3 / 4)"), connections: 4)
+        let (data, coordinator) = try await download(server.url("/file/\(size)?delayMs=20&delayFrom=\(size * 3 / 4)"), connections: 4)
         #expect(await coordinator.segments.count > 4)
         #expect(data == RocketTestServer.content(count: size))
     }

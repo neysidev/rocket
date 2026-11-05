@@ -121,3 +121,32 @@ public protocol CheckpointStore: Sendable {
     func saveCheckpoint(downloadID: UUID, segments: [Segment]) async throws
     func segments(downloadID: UUID) async throws -> [Segment]
 }
+
+/// One line of a download's log: state changes, retries, back-offs, failures (TRD: per-download log).
+public struct LogEntry: Codable, Sendable, Hashable {
+    public var date: Date
+    public var message: String
+    public var isError: Bool
+
+    public init(date: Date = .now, message: String, isError: Bool = false) {
+        self.date = date
+        self.message = message
+        self.isError = isError
+    }
+}
+
+/// What the detail view shows beyond the list row (FR-APP-02).
+public struct DownloadDetails: Codable, Sendable, Hashable {
+    public var segments: [Segment]
+    public var activeConnections: Int
+    /// Current limit after any rate-limit back-off; nil when not running.
+    public var connectionLimit: Int?
+    public var log: [LogEntry]
+
+    public init(segments: [Segment], activeConnections: Int, connectionLimit: Int?, log: [LogEntry]) {
+        self.segments = segments
+        self.activeConnections = activeConnections
+        self.connectionLimit = connectionLimit
+        self.log = log
+    }
+}

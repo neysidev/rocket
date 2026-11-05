@@ -73,3 +73,33 @@ import Testing
         #expect(download.destinationPath == base.path)
     }
 }
+
+@Suite struct DetailsTests {
+    @Test func logsRetriesAndReportsSegments() async throws {
+        let server = try await RocketTestServer()
+        let repository = MemoryRepository()
+        let scheduler = DownloadScheduler(
+            repository: repository, checkpoints: repository, queues: repository, transport: URLSessionHTTPTransport(),
+            retry: RetryPolicy(baseDelay: .milliseconds(5), maxDelay: .milliseconds(20)),
+            defaults: RocketDefaults(store: UserDefaults(suiteName: "Details-\(UUID().uuidString)")!)
+        )
+        let folder = FileManager.default.temporaryDirectory.appending(path: "Details-\(UUID())", directoryHint: .isDirectory)
+        // Probe gets one 503 too, so add a clean URL's info via a manual record instead.
+        let url = server.url("/file/6000000?fail=503&failCount=3&delayMs=5")
+        var download = Download(url: url, destinationPath: folder.path, fileName: "d.bin", connections: 4)
+        download.remoteInfo = try await URLSessionHTTPTransport().probe(server.url("/file/6000000"))
+        download.finalURL = url
+        await repository.save(download)
+        try await scheduler.start()
+
+        let deadline = ContinuousClock.now + .seconds(20)
+        while ContinuousClock.now < deadline, try await scheduler.snapshot().first?.state != .completed {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let details = try await scheduler.details(id: download.id)
+        let messages = details.log.map(\.message)
+        #expect(messages.contains { $0.hasPrefix("Downloading with up to 4 connections") })
+        #expect(messages.contains { $0.contains("Server is busy") })
+        #expect(messages.last?.hasPrefix("Completed") == true)
+    }
+}

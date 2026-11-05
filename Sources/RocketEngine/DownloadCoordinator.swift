@@ -17,6 +17,8 @@ public actor DownloadCoordinator {
     private let retry: RetryPolicy
     /// Every limiter that covers this download (global, per-download); each chunk takes tokens from all.
     private let limiters: [BandwidthLimiter]
+    /// Notable events for the download's log (retries, back-offs).
+    private let onLog: @Sendable (LogEntry) -> Void
 
     public private(set) var segments: [Segment]
     private var active: Set<Int> = []
@@ -28,11 +30,13 @@ public actor DownloadCoordinator {
         connections: Int, transport: any HTTPTransport, planner: SegmentPlanner = SegmentPlanner(),
         retry: RetryPolicy = RetryPolicy(),
         limiters: [BandwidthLimiter] = [],
+        onLog: @escaping @Sendable (LogEntry) -> Void = { _ in },
         checkpointInterval: Duration = .seconds(2),
         onCheckpoint: (@Sendable ([Segment]) async throws -> Void)? = nil
     ) {
         self.retry = retry
         self.limiters = limiters
+        self.onLog = onLog
         connectionLimit = max(1, connections)
         self.checkpointInterval = checkpointInterval
         self.onCheckpoint = onCheckpoint
@@ -48,6 +52,7 @@ public actor DownloadCoordinator {
     public nonisolated var isSegmented: Bool { info.acceptsRanges && info.totalBytes != nil }
 
     public var receivedBytes: Int64 { segments.reduce(0) { $0 + $1.received } }
+    public var activeConnections: Int { active.count }
 
     /// Known up front, or learned when a stream of unknown length ends.
     public var totalBytes: Int64? {
@@ -161,8 +166,13 @@ public actor DownloadCoordinator {
                 attempt = await segment(index).received > before ? 1 : attempt + 1
                 guard attempt < retry.maxAttempts else { throw error }
                 // Rate-limited: free this connection; the segment is picked up again when a slot opens.
-                if error.isRateLimit, await backOff(index) { return }
-                try await retry.sleep(retry.delay(forAttempt: attempt))
+                if error.isRateLimit, await backOff(index) {
+                    onLog(LogEntry(message: "Server is busy (\(error.userMessage)); now using \(await connectionLimit) connections"))
+                    return
+                }
+                let delay = retry.delay(forAttempt: attempt)
+                onLog(LogEntry(message: "Connection \(index + 1): \(error.userMessage) Retrying in \(delay.formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow))) (attempt \(attempt + 1) of \(retry.maxAttempts))."))
+                try await retry.sleep(delay)
             }
         }
     }

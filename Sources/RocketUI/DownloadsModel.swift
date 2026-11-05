@@ -95,6 +95,9 @@ public final class DownloadsModel {
     public private(set) var items: [DownloadItem] = []
     public internal(set) var queues: [DownloadQueue] = []
     public internal(set) var rules: [DownloadRule] = []
+    /// Per-download speed samples for the last 60 s (5 Hz), for the detail view's chart.
+    public private(set) var speedSamples: [UUID: [Double]] = [:]
+    public var showsInspector = false
     /// Queue being edited (a new one has an unsaved id).
     public var editingQueue: DownloadQueue?
     private var polls = 0
@@ -199,6 +202,11 @@ public final class DownloadsModel {
         lastStates = Dictionary(uniqueKeysWithValues: downloads.map { ($0.id, $0.state) })
         let next = downloads.map { DownloadItem(download: $0, speed: measureSpeed($0, now: now)) }
         let ids = Set(next.map(\.id))
+        for item in next where item.download.state == .downloading {
+            speedSamples[item.id, default: []].append(item.speed)
+            if speedSamples[item.id]!.count > 300 { speedSamples[item.id]!.removeFirst() }
+        }
+        speedSamples = speedSamples.filter { ids.contains($0.key) }
         samples = samples.filter { ids.contains($0.key) }
         selection.formIntersection(ids)
         if next != items { items = next }
@@ -289,6 +297,13 @@ public final class DownloadsModel {
     }
 
     // MARK: Queues
+
+    // MARK: Details
+
+    public func details(_ id: UUID) async -> DownloadDetails? {
+        guard let agent, case .details(let details)? = try? await agent.send(.details(id: id)) else { return nil }
+        return details
+    }
 
     // MARK: Rules
 

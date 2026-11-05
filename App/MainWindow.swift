@@ -12,10 +12,28 @@ struct MainWindow: View {
                 .navigationSplitViewColumnWidth(RocketSize.sidebarWidth)
         } detail: {
             DownloadListView(model: downloads)
+                .inspector(isPresented: $downloads.showsInspector) {
+                    Group {
+                        if downloads.selection.count == 1, let id = downloads.selection.first {
+                            DownloadDetailView(model: downloads, id: id)
+                        } else {
+                            Text(downloads.selection.isEmpty ? "Select a download" : "\(downloads.selection.count) downloads selected")
+                                .font(.rocketBody)
+                                .foregroundStyle(RocketColor.textSecondary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                    .inspectorColumnWidth(min: 260, ideal: RocketSize.inspectorWidth, max: 420)
+                }
         }
         .searchable(text: $downloads.search, placement: .toolbar, prompt: "Filter")
         .toolbar {
             ToolbarItem { Button("Add", systemImage: "plus") { downloads.beginAdding() }.help("Add downloads (⌘N)") }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Inspector", systemImage: "sidebar.right") { downloads.showsInspector.toggle() }
+                    .help("Show details (⌥⌘I)")
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+            }
             ToolbarItem {
                 Menu {
                     SpeedLimitPicker("Limit All Downloads", current: downloads.settings.globalSpeedLimit) { rate in

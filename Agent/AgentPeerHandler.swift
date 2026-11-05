@@ -55,6 +55,8 @@ struct AgentPeerHandler: XPCPeerHandler {
             case let .setLimit(id, bytesPerSecond):
                 try await scheduler.setLimit(id: id, bytesPerSecond: bytesPerSecond)
                 return .ok
+            case .details(let id):
+                return .details(try await scheduler.details(id: id))
             case .rules:
                 return .rules(try await scheduler.rules())
             case .saveRule(let rule):
