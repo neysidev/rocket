@@ -35,9 +35,13 @@ struct AgentPeerHandler: XPCPeerHandler {
         do {
             switch command {
             case let .add(url, directory, fileName, connections):
+                // Unset options follow the app's settings.
+                let defaults = RocketDefaults()
                 let folder = directory.map { URL(filePath: ($0 as NSString).expandingTildeInPath, directoryHint: .isDirectory) }
-                    ?? URL.downloadsDirectory
-                return .download(try await scheduler.add(url: url, folder: folder, fileName: fileName, connections: connections ?? 8))
+                    ?? defaults.folder
+                return .download(try await scheduler.add(
+                    url: url, folder: folder, fileName: fileName, connections: connections ?? defaults.connections
+                ))
             case .pause(let id):
                 try await scheduler.pause(id: id)
                 return .ok

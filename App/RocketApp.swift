@@ -15,9 +15,7 @@ struct RocketApp: App {
         }
         .commands { DownloadCommands(downloads: app.downloads) }
         Settings {
-            Text("Settings")
-                .font(.rocketBody)
-                .padding(RocketSpace.s6)
+            SettingsView(settings: app.downloads.settings)
         }
         MenuBarExtra("Rocket", systemImage: "arrow.down.circle") {
             MenuBarPanel()
@@ -36,7 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var polling: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let notifier = Notifier(downloads: downloads)
+        let settings = downloads.settings
+        let notifier = Notifier(downloads: downloads, isEnabled: { settings.notificationsEnabled })
         self.notifier = notifier
         downloads.onEvent = { notifier.post($0) }
         polling = Task { [agent, downloads] in

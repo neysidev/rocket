@@ -92,8 +92,7 @@ public final class DownloadsModel {
     public var alert: String?
     /// The add sheet, when open.
     public var adding: AddDownloadsModel?
-    public var defaultFolder: URL = .downloadsDirectory
-    public var defaultConnections = 8
+    public let settings: AppSettings
 
     private var samples: [UUID: (bytes: Int64, time: ContinuousClock.Instant, speed: Double)] = [:]
     /// Last seen state per download; nil until the first snapshot, so existing history does not notify.
@@ -101,8 +100,9 @@ public final class DownloadsModel {
     /// Called when a download finishes or fails while the app is watching.
     public var onEvent: (@MainActor (DownloadEvent) -> Void)?
 
-    public init(agent: (any AgentCommanding)? = nil) {
+    public init(agent: (any AgentCommanding)? = nil, settings: AppSettings = AppSettings()) {
         self.agent = agent
+        self.settings = settings
     }
 
     public var visibleItems: [DownloadItem] {
@@ -174,8 +174,8 @@ public final class DownloadsModel {
     public func beginAdding(_ links: [URL]? = nil) {
         let links = links ?? LinkExtractor.urls(in: NSPasteboard.general.string(forType: .string) ?? "")
         adding = AddDownloadsModel(
-            text: links.map(\.absoluteString).joined(separator: "\n"), folder: defaultFolder,
-            connections: defaultConnections, agent: agent, existing: items.map(\.download)
+            text: links.map(\.absoluteString).joined(separator: "\n"), folder: settings.folder,
+            connections: settings.connections, agent: agent, existing: items.map(\.download)
         )
     }
 
