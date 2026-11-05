@@ -14,16 +14,22 @@ public actor DownloadCoordinator {
     private let connections: Int
     private let checkpointInterval: Duration
     private let onCheckpoint: (@Sendable ([Segment]) async throws -> Void)?
+    private let retry: RetryPolicy
 
     public private(set) var segments: [Segment]
     private var active: Set<Int> = []
+    /// Simultaneous connections; lowered when the server rate-limits us (FR-ENG-12).
+    public private(set) var connectionLimit: Int
 
     public init(
         url: URL, info: RemoteFileInfo, file: PartFile, segments: [Segment] = [],
         connections: Int, transport: any HTTPTransport, planner: SegmentPlanner = SegmentPlanner(),
+        retry: RetryPolicy = RetryPolicy(),
         checkpointInterval: Duration = .seconds(2),
         onCheckpoint: (@Sendable ([Segment]) async throws -> Void)? = nil
     ) {
+        self.retry = retry
+        connectionLimit = max(1, connections)
         self.checkpointInterval = checkpointInterval
         self.onCheckpoint = onCheckpoint
         self.url = url
@@ -74,7 +80,7 @@ public actor DownloadCoordinator {
                 ? planner.initialSegments(totalBytes: info.totalBytes!, connections: connections)
                 : [info.totalBytes.map { Segment(start: 0, end: $0 - 1) } ?? .open()]
         }
-        let target = isSegmented ? connections : 1
+        connectionLimit = isSegmented ? min(connectionLimit, connections) : 1
 
         let ticker = -1
         try await withThrowingTaskGroup(of: Int.self) { group in
@@ -87,15 +93,15 @@ public actor DownloadCoordinator {
                     return ticker
                 }
             }
-            while active.count < target, let index = claimSegment() {
-                group.addTask { try await self.transfer(index); return index }
+            while active.count < connectionLimit, let index = claimSegment() {
+                group.addTask { try await self.transferWithRetry(index); return index }
             }
             if active.isEmpty { group.cancelAll() } // nothing left to fetch
             while let finished = try await group.next() {
                 guard finished != ticker else { continue }
                 active.remove(finished)
-                while active.count < target, let index = claimSegment() {
-                    group.addTask { try await self.transfer(index); return index }
+                while active.count < connectionLimit, let index = claimSegment() {
+                    group.addTask { try await self.transferWithRetry(index); return index }
                 }
                 if active.isEmpty { group.cancelAll() } // stops the ticker
             }
@@ -126,12 +132,36 @@ public actor DownloadCoordinator {
         return segments[index].end
     }
 
+    /// The server pushed back: drop one connection. Returns true if this worker should hand its segment back.
+    private func backOff(_ index: Int) -> Bool {
+        connectionLimit = max(1, connectionLimit - 1)
+        return active.count > connectionLimit
+    }
+
     /// A stream of unknown length ended cleanly: its last byte is the file's last byte.
     private func closeOpenSegment(_ index: Int, at offset: Int64) {
         segments[index].end = offset - 1
     }
 
     private func segment(_ index: Int) -> Segment { segments[index] }
+
+    /// Retries transient failures with backoff. Attempts reset whenever a try made progress, so a long
+    /// download on a flaky link is not failed by drops hours apart.
+    private nonisolated func transferWithRetry(_ index: Int) async throws {
+        var attempt = 0
+        while true {
+            let before = await segment(index).received
+            do {
+                return try await transfer(index)
+            } catch let error as DownloadError where error.kind == .transient {
+                attempt = await segment(index).received > before ? 1 : attempt + 1
+                guard attempt < retry.maxAttempts else { throw error }
+                // Rate-limited: free this connection; the segment is picked up again when a slot opens.
+                if error.isRateLimit, await backOff(index) { return }
+                try await retry.sleep(retry.delay(forAttempt: attempt))
+            }
+        }
+    }
 
     /// Streams one segment into the file. Runs off the actor; only bookkeeping hops onto it.
     private nonisolated func transfer(_ index: Int) async throws {

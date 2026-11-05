@@ -178,7 +178,10 @@ public final class RocketTestServer: Sendable {
         if status == 206 { responseHeaders["Content-Range"] = "bytes \(start)-\(end)/\(size)" }
         if let name = query["name"] { responseHeaders["Content-Disposition"] = "attachment; filename=\"\(name)\"" }
 
-        let dropAt = query["dropAt"].flatMap(Int64.init).flatMap { count <= Int(query["dropCount"] ?? "1") ?? 1 ? $0 : nil }
+        let dropAt = query["dropAt"].flatMap(Int64.init).flatMap { offset in
+            // Only responses whose body spans the drop point, and only the first `dropCount` requests.
+            start <= offset && offset <= end && count <= Int(query["dropCount"] ?? "1") ?? 1 ? offset : nil
+        }
         let body = method == "HEAD" ? nil : BodyPlan(
             offset: start, end: end, version: version, dropAt: dropAt,
             delay: .milliseconds(Int(query["delayMs"] ?? "0") ?? 0),
@@ -237,8 +240,10 @@ public final class RocketTestServer: Sendable {
     }
 
     private static func finish(_ connection: NWConnection) {
+        // Send FIN, then wait for the client to close: cancelling right away can reset the connection
+        // and lose the tail of the body still in flight.
         connection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in
-            connection.cancel()
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { _, _, _, _ in connection.cancel() }
         })
     }
 }
