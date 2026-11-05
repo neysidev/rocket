@@ -13,9 +13,12 @@ struct RocketApp: App {
                 .frame(minWidth: 760, minHeight: 480)
                 .onChange(of: app.agent.status) { app.downloads.agent = app.agent.client }
         }
-        .commands { DownloadCommands(downloads: app.downloads) }
+        .commands {
+            DownloadCommands(downloads: app.downloads)
+            UpdateCommands(updater: app.updater)
+        }
         Settings {
-            SettingsView(model: app.downloads)
+            SettingsView(model: app.downloads) { UpdateSettings(updater: app.updater.updater) }
         }
         MenuBarExtra {
             MenuBarContent(downloads: app.downloads)
@@ -33,6 +36,7 @@ struct RocketApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let agent = AgentConnection()
     let downloads = DownloadsModel()
+    let updater = Updater()
     private var notifier: Notifier?
     private let dock = DockProgress()
     private var polling: Task<Void, Never>?

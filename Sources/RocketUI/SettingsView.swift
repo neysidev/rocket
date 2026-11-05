@@ -50,14 +50,17 @@ public final class AppSettings {
 /// General and Rules tabs.
 public struct SettingsView: View {
     let model: DownloadsModel
+    /// App-provided sections (the Sparkle updater lives in the app target, TRD: one module per package).
+    let extra: AnyView
 
-    public init(model: DownloadsModel) {
+    public init(model: DownloadsModel, @ViewBuilder extra: () -> some View = { EmptyView() }) {
         self.model = model
+        self.extra = AnyView(extra())
     }
 
     public var body: some View {
         TabView {
-            GeneralSettings(settings: model.settings)
+            GeneralSettings(settings: model.settings, extra: extra)
                 .tabItem { Label("General", systemImage: "gearshape") }
             RulesSettings(model: model)
                 .tabItem { Label("Rules", systemImage: "line.3.horizontal.decrease") }
@@ -68,6 +71,7 @@ public struct SettingsView: View {
 
 struct GeneralSettings: View {
     @Bindable var settings: AppSettings
+    let extra: AnyView
     @State private var choosingFolder = false
 
     var body: some View {
@@ -123,6 +127,7 @@ struct GeneralSettings: View {
                     .font(.rocketCaption)
                     .foregroundStyle(RocketColor.textSecondary)
             }
+            extra
         }
         .formStyle(.grouped)
         .frame(width: 460)

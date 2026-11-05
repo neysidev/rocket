@@ -18,6 +18,8 @@ settings:
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
     MARKETING_VERSION: "0.0.1"
+    # Sparkle EdDSA public key. The release workflow sets it; empty (local builds) keeps the updater off.
+    SPARKLE_PUBLIC_KEY: ""
     CURRENT_PROJECT_VERSION: "1"
 
 packages:
@@ -26,6 +28,9 @@ packages:
   ArgumentParser:
     url: https://github.com/apple/swift-argument-parser.git
     from: "1.5.0"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
 
 targets:
   RocketApp:
@@ -38,6 +43,12 @@ targets:
           copyFiles:
             destination: wrapper
             subpath: Contents/Library/LaunchAgents
+    # Sparkle keys (FR-APP-10). No SUEnableAutomaticChecks: Sparkle asks the user before the first check.
+    info:
+      path: .build/generated/RocketApp-Info.plist
+      properties:
+        SUFeedURL: https://neysidev.github.io/rocket/appcast.xml
+        SUPublicEDKey: $(SPARKLE_PUBLIC_KEY)
     settings:
       base:
         PRODUCT_NAME: Rocket Downloader
@@ -56,6 +67,7 @@ targets:
         product: RocketDesign
       - package: Rocket
         product: RocketUI
+      - package: Sparkle
       - target: rocketd
         embed: true
         codeSign: true
