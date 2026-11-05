@@ -69,7 +69,18 @@ public struct TransferResponse: Sendable {
 /// Networking port; the URLSession adapter lives in RocketNetworking, fakes in tests.
 public protocol HTTPTransport: Sendable {
     /// `GET` with `Range: bytes=0-0`, falling back to `HEAD` when the server rejects it.
-    func probe(_ url: URL) async throws -> RemoteFileInfo
+    func probe(_ url: URL, context: RequestContext?) async throws -> RemoteFileInfo
     /// Starts a request and returns once headers arrive. Throws `DownloadError.http` for 4xx/5xx.
-    func fetch(_ url: URL, range: ByteRange?, ifRange: String?) async throws -> TransferResponse
+    /// Credential headers from `context` are dropped if a redirect leaves the original host.
+    func fetch(_ url: URL, range: ByteRange?, ifRange: String?, context: RequestContext?) async throws -> TransferResponse
+}
+
+public extension HTTPTransport {
+    func probe(_ url: URL) async throws -> RemoteFileInfo {
+        try await probe(url, context: nil)
+    }
+
+    func fetch(_ url: URL, range: ByteRange?, ifRange: String?) async throws -> TransferResponse {
+        try await fetch(url, range: range, ifRange: ifRange, context: nil)
+    }
 }

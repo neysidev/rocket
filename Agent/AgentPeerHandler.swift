@@ -34,12 +34,15 @@ struct AgentPeerHandler: XPCPeerHandler {
     private func handle(_ command: Command) async -> Reply {
         do {
             switch command {
-            case let .add(url, directory, fileName, connections, speedLimit, queueID):
+            case let .add(url, directory, fileName, connections, speedLimit, queueID, context):
                 // Unset options come from rules, then the app's settings (resolved by the scheduler).
                 let folder = directory.map { URL(filePath: ($0 as NSString).expandingTildeInPath, directoryHint: .isDirectory) }
                 return .download(try await scheduler.add(
-                    url: url, folder: folder, fileName: fileName, connections: connections, speedLimit: speedLimit, queueID: queueID
+                    url: url, folder: folder, fileName: fileName, connections: connections, speedLimit: speedLimit,
+                    queueID: queueID, context: context
                 ))
+            case let .refreshURL(id, url):
+                return .download(try await scheduler.refreshURL(id: id, to: url))
             case .pause(let id):
                 try await scheduler.pause(id: id)
                 return .ok
@@ -76,8 +79,8 @@ struct AgentPeerHandler: XPCPeerHandler {
             case let .move(ids, queueID, before):
                 try await scheduler.move(ids: ids, toQueue: queueID, before: before)
                 return .ok
-            case .probe(let url):
-                return .info(try await scheduler.probe(url))
+            case let .probe(url, context):
+                return .info(try await scheduler.probe(url, context: context))
             case .snapshot:
                 return .snapshot(try await scheduler.snapshot())
             }
@@ -90,6 +93,9 @@ struct AgentPeerHandler: XPCPeerHandler {
         switch error {
         case let error as DownloadError: error.userMessage
         case SchedulerError.notFound(let id): "No download with id \(id)"
+        case RefreshError.differentFile: "That link points to a different file (the size does not match)."
+        case RequestContextError.invalidHeaderName(let name): "Invalid header name: \(name)"
+        case RequestContextError.invalidHeaderValue(let name): "Header \(name) contains a line break."
         default: error.localizedDescription
         }
     }

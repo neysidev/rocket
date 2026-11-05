@@ -69,6 +69,9 @@ public final class AddDownloadsModel: Identifiable {
     public var folder: URL
     public var connections: Int
     public var queueID: String
+    /// Headers, referrer, user agent, cookies and Basic auth for every link in this sheet (FR-ADD-04).
+    public var context = RequestContext()
+    public var headerText = ""
     public let queues: [DownloadQueue]
     public private(set) var phase: Phase = .input
     public var candidates: [Candidate] = []
@@ -127,11 +130,12 @@ public final class AddDownloadsModel: Identifiable {
             for index in candidates.indices { candidates[index].error = String(localized: "Rocket's background agent is not running.") }
             return
         }
+        let requestContext = requestContext
         await withTaskGroup(of: (UUID, Result<RemoteFileInfo, any Error>).self) { group in
             for candidate in candidates {
                 group.addTask {
                     do {
-                        switch try await agent.send(.probe(url: candidate.url)) {
+                        switch try await agent.send(.probe(url: candidate.url, context: requestContext)) {
                         case .info(let info): return (candidate.id, .success(info))
                         case .error(let message): return (candidate.id, .failure(AddError(message: message)))
                         default: return (candidate.id, .failure(AddError(message: "Unexpected reply")))
@@ -179,7 +183,8 @@ public final class AddDownloadsModel: Identifiable {
             }
             let command = Command.add(
                 url: candidate.url, directory: folder == initialFolder ? nil : folder.path, fileName: candidates[index].fileName,
-                queueID: queueID == initialQueueID && queueID == DownloadQueue.defaultID ? nil : queueID
+                queueID: queueID == initialQueueID && queueID == DownloadQueue.defaultID ? nil : queueID,
+                context: requestContext
             )
             switch try? await agent.send(command) {
             case .download(let download)?: ids.append(download.id)
@@ -189,6 +194,16 @@ public final class AddDownloadsModel: Identifiable {
         }
         revealed = ids
         return ids
+    }
+
+    /// The context with typed header lines merged in; nil when nothing was entered.
+    var requestContext: RequestContext? {
+        var context = context
+        context.headers = RequestContext.headers(fromLines: headerText.components(separatedBy: .newlines))
+        for keyPath in [\RequestContext.referrer, \.userAgent, \.cookies, \.username, \.password] where context[keyPath: keyPath]?.isEmpty == true {
+            context[keyPath: keyPath] = nil
+        }
+        return context.isEmpty ? nil : context
     }
 
     /// "a.iso" → "a 2.iso", like Finder, avoiding files on disk and names already in the list.

@@ -13,17 +13,18 @@ public final class URLSessionHTTPTransport: HTTPTransport {
         session.invalidateAndCancel()
     }
 
-    public func probe(_ url: URL) async throws -> RemoteFileInfo {
+    public func probe(_ url: URL, context: RequestContext?) async throws -> RemoteFileInfo {
         do {
-            let response = try await fetch(url, range: ByteRange(start: 0, end: 0), ifRange: nil)
+            let response = try await fetch(url, range: ByteRange(start: 0, end: 0), ifRange: nil, context: context)
             return response.info // dropping `body` cancels the transfer
         } catch DownloadError.http(let status) where [405, 416, 501].contains(status) {
-            return try await head(url)
+            return try await head(url, context: context)
         }
     }
 
-    public func fetch(_ url: URL, range: ByteRange?, ifRange: String?) async throws -> TransferResponse {
+    public func fetch(_ url: URL, range: ByteRange?, ifRange: String?, context: RequestContext?) async throws -> TransferResponse {
         var request = URLRequest(url: url)
+        for (name, value) in context?.allHeaders ?? [:] { request.setValue(value, forHTTPHeaderField: name) }
         if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
         if let ifRange { request.setValue(ifRange, forHTTPHeaderField: "If-Range") }
         // Compressed bodies would break byte offsets.
@@ -40,10 +41,11 @@ public final class URLSessionHTTPTransport: HTTPTransport {
         }
     }
 
-    private func head(_ url: URL) async throws -> RemoteFileInfo {
+    private func head(_ url: URL, context: RequestContext?) async throws -> RemoteFileInfo {
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
-        let (_, response) = try await session.data(for: request)
+        for (name, value) in context?.allHeaders ?? [:] { request.setValue(value, forHTTPHeaderField: name) }
+        let (_, response) = try await session.data(for: request, delegate: RedirectGuard())
         guard let http = response as? HTTPURLResponse else { throw DownloadError.network(code: URLError.badServerResponse.rawValue) }
         guard http.statusCode < 400 else { throw DownloadError.http(status: http.statusCode) }
         var info = RemoteFileInfo(http, fallbackURL: url)
@@ -78,6 +80,27 @@ extension RemoteFileInfo {
             suggestedFileName: http.suggestedFilename,
             contentType: http.mimeType
         )
+    }
+}
+
+/// Drops cookies and credentials when a redirect leaves the original host.
+private final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        Self.guarded(request, from: task.originalRequest)
+    }
+
+    /// Same host: keep credentials (URLSession drops Authorization on every redirect, so put it back).
+    /// Another host: strip them.
+    static func guarded(_ request: URLRequest, from original: URLRequest?) -> URLRequest {
+        var request = request
+        let sameHost = request.url?.host()?.lowercased() == original?.url?.host()?.lowercased()
+        for name in RequestContext.credentialHeaders {
+            request.setValue(sameHost ? original?.value(forHTTPHeaderField: name) : nil, forHTTPHeaderField: name)
+        }
+        return request
     }
 }
 
@@ -132,6 +155,13 @@ private final class DataTaskDelegate: NSObject, URLSessionDataDelegate, @uncheck
         ))
         headers = nil
         completionHandler(.allow)
+    }
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(RedirectGuard.guarded(request, from: task.originalRequest))
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {

@@ -53,6 +53,9 @@ struct MainWindow: View {
                 }
             }
         }
+        .sheet(item: $downloads.refreshing) { download in
+            RefreshLinkSheet(download: download) { url in await downloads.refreshLink(download.id, to: url) }
+        }
         .sheet(item: $downloads.editingQueue) { queue in
             QueueEditor(queue: queue) { saved in Task { await downloads.saveQueue(saved) } }
         }

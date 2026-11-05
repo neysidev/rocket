@@ -14,6 +14,7 @@ import os
 ///   - `fail=<status>&failCount=N`: the first N requests for this exact URL return `status` (default N=1).
 ///   - `dropAt=<offset>&dropCount=N`: the first N requests close the connection once the body reaches
 ///     absolute file offset `offset` (default N=1).
+///   - `require=Name:Value`: answer 401 (Authorization) or 403 unless the request has that header value.
 ///   - `delayMs=ms`: pause between 64 KiB chunks (slow server); with `delayFrom=<offset>` only from that offset on.
 /// - `GET /redirect?to=<path>` answers `302` to `to`.
 public final class RocketTestServer: Sendable {
@@ -134,6 +135,11 @@ public final class RocketTestServer: Sendable {
             return (state.counts[target]!, state.version)
         }
 
+        if let required = query["require"], let colon = required.firstIndex(of: ":") {
+            let name = required[..<colon].lowercased()
+            let value = String(required[required.index(after: colon)...])
+            if headers[name] != value { return send(connection, status: name == "authorization" ? 401 : 403, headers: [:]) }
+        }
         if components.path == "/redirect", let to = query["to"] {
             return send(connection, status: 302, headers: ["Location": to])
         }

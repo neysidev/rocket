@@ -67,6 +67,9 @@ public struct DownloadListView: View {
         if states.contains(.completed) {
             Button("Open") { ids.forEach(model.open) }
         }
+        if ids.count == 1, let download = ids.first.flatMap(model.download), download.state != .completed {
+            Button("Refresh Link…") { model.refreshing = download }
+        }
         Button("Show in Finder") { model.reveal(ids) }
         Menu("Move to Queue") {
             ForEach(model.queues) { queue in

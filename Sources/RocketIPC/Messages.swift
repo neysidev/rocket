@@ -27,7 +27,12 @@ public struct Envelope<Payload: Codable & Sendable>: Codable, Sendable {
 
 public enum Command: Codable, Sendable, Hashable {
     /// `directory` defaults to ~/Downloads; `fileName` to what the server suggests.
-    case add(url: URL, directory: String?, fileName: String? = nil, connections: Int? = nil, speedLimit: Int64? = nil, queueID: String? = nil)
+    case add(
+        url: URL, directory: String?, fileName: String? = nil, connections: Int? = nil, speedLimit: Int64? = nil,
+        queueID: String? = nil, context: RequestContext? = nil
+    )
+    /// Replace an expired link, keeping progress (FR-ENG-09).
+    case refreshURL(id: UUID, url: URL)
     case pause(id: UUID)
     case resume(id: UUID)
     case cancel(id: UUID)
@@ -45,7 +50,7 @@ public enum Command: Codable, Sendable, Hashable {
     /// Moves downloads into a queue, before another download or at the end (FR-QUE-03).
     case move(ids: [UUID], toQueue: String, before: UUID?)
     /// Looks up name, size and range support without adding anything (FR-ADD-02).
-    case probe(url: URL)
+    case probe(url: URL, context: RequestContext? = nil)
 }
 
 public enum Reply: Codable, Sendable {

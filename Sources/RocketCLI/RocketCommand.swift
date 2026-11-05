@@ -10,7 +10,7 @@ struct RocketCommand: AsyncParsableCommand {
         commandName: "rocket",
         abstract: "Fast, resumable downloads from the terminal.",
         version: "API \(RocketAPI.version.major).\(RocketAPI.version.minor)",
-        subcommands: [Add.self, Info.self, List.self, Limit.self, QueueCommand.self, Pause.self, Resume.self, Cancel.self]
+        subcommands: [Add.self, Info.self, List.self, Limit.self, QueueCommand.self, Refresh.self, Pause.self, Resume.self, Cancel.self]
     )
 
     /// Same as ArgumentParser's default, but usage errors exit 2 (TRD) instead of 64.
@@ -43,6 +43,11 @@ struct Add: AsyncParsableCommand {
     @Option(help: "Parallel connections, 1–16.") var connections: Int?
     @Option(help: "Speed limit for this download, e.g. 2M or 500K (bytes per second).") var limit: String?
     @Option(help: "Queue name (default: Default).") var queue: String?
+    @Option(name: .customLong("header"), help: "Extra request header, \"Name: value\" (repeatable).") var headers: [String] = []
+    @Option(help: "Referer header.") var referer: String?
+    @Option(name: .customLong("user-agent"), help: "User-Agent header.") var userAgent: String?
+    @Option(help: "Cookie header value (stored in the Keychain).") var cookie: String?
+    @Option(help: "HTTP Basic credentials, user:password (password stored in the Keychain).") var user: String?
     @Flag(help: "Wait until the download finishes; exit 1 if it fails.") var wait = false
     @Flag(help: "Print JSON.") var json = false
 
@@ -56,9 +61,14 @@ struct Add: AsyncParsableCommand {
         let directory = dir.map { URL(filePath: $0, relativeTo: .currentDirectory()).path }
         var queueID: String?
         if let queue { queueID = try await Agent.queue(named: queue).id }
+        let credentials = user.map { $0.split(separator: ":", maxSplits: 1).map(String.init) }
+        let context = RequestContext(
+            headers: RequestContext.headers(fromLines: headers), referrer: referer, userAgent: userAgent, cookies: cookie,
+            username: credentials?.first, password: credentials.flatMap { $0.count > 1 ? $0[1] : nil }
+        )
         let reply = try await Agent.send(.add(
             url: URL(string: url)!, directory: directory, fileName: name, connections: connections,
-            speedLimit: limit.flatMap(ByteRate.parse), queueID: queueID
+            speedLimit: limit.flatMap(ByteRate.parse), queueID: queueID, context: context
         ))
         guard case .download(let download) = reply else { throw Agent.unexpected(reply) }
         guard wait else { return Output.print(download, json: json) }
@@ -194,6 +204,18 @@ struct QueueRemove: AsyncParsableCommand {
     static let configuration = CommandConfiguration(commandName: "remove", abstract: "Remove a queue; its downloads move to Default.")
     @Argument var name: String
     func run() async throws { try await Agent.expectOK(.deleteQueue(id: Agent.queue(named: name).id)) }
+}
+
+struct Refresh: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Replace an expired link with a fresh one, keeping progress.")
+    @Argument(help: "Download ID or a unique prefix of it.") var id: String
+    @Argument(help: "The new link to the same file.") var url: String
+
+    func run() async throws {
+        guard let url = URL(string: url) else { throw ValidationError("Not a URL: \(self.url)") }
+        guard case .download(let download) = try await Agent.send(.refreshURL(id: Agent.resolve(id), url: url)) else { throw ExitCode.failure }
+        Output.print(download, json: false)
+    }
 }
 
 struct Pause: AsyncParsableCommand {

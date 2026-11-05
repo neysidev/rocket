@@ -11,9 +11,11 @@ let log = Rocket.logger("Agent")
 
 let scheduler: DownloadScheduler
 do {
-    let repository = GRDBDownloadRepository(db: try RocketDatabase.onDisk())
+    let database = try RocketDatabase.onDisk()
+    let repository = GRDBDownloadRepository(db: database)
     scheduler = DownloadScheduler(
         repository: repository, checkpoints: repository, queues: repository, rules: repository,
+        contexts: GRDBRequestContextStore(db: database),
         transport: URLSessionHTTPTransport(),
         runPostAction: { await PostQueueActions.run($0) },
         onActivityChange: { await SleepAssertion.shared.update(downloading: $0) }

@@ -17,6 +17,7 @@ public actor DownloadCoordinator {
     private let retry: RetryPolicy
     /// Every limiter that covers this download (global, per-download); each chunk takes tokens from all.
     private let limiters: [BandwidthLimiter]
+    private let context: RequestContext?
     /// Notable events for the download's log (retries, back-offs).
     private let onLog: @Sendable (LogEntry) -> Void
 
@@ -30,12 +31,14 @@ public actor DownloadCoordinator {
         connections: Int, transport: any HTTPTransport, planner: SegmentPlanner = SegmentPlanner(),
         retry: RetryPolicy = RetryPolicy(),
         limiters: [BandwidthLimiter] = [],
+        context: RequestContext? = nil,
         onLog: @escaping @Sendable (LogEntry) -> Void = { _ in },
         checkpointInterval: Duration = .seconds(2),
         onCheckpoint: (@Sendable ([Segment]) async throws -> Void)? = nil
     ) {
         self.retry = retry
         self.limiters = limiters
+        self.context = context
         self.onLog = onLog
         connectionLimit = max(1, connections)
         self.checkpointInterval = checkpointInterval
@@ -183,7 +186,8 @@ public actor DownloadCoordinator {
         let response = try await transport.fetch(
             url,
             range: isSegmented ? ByteRange(start: segment.next, end: segment.end) : nil,
-            ifRange: isSegmented ? info.validator : nil
+            ifRange: isSegmented ? info.validator : nil,
+            context: context
         )
         // A full-body answer to an If-Range request means the file changed on the server.
         if isSegmented, !response.isPartial { throw DownloadError.remoteFileChanged }

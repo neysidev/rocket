@@ -45,7 +45,7 @@ struct DownloadRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.accessibilityLabel)
         .accessibilityActions {
-            ForEach(RowAction.available(for: download.state), id: \.self) { action in
+            ForEach(RowAction.available(for: download), id: \.self) { action in
                 Button(action.title) { perform(action) }
             }
         }
@@ -74,7 +74,7 @@ struct DownloadRow: View {
 
     private var actions: some View {
         HStack(spacing: RocketSpace.s1) {
-            ForEach(RowAction.available(for: download.state), id: \.self) { action in
+            ForEach(RowAction.available(for: download), id: \.self) { action in
                 Button(action.title, systemImage: action.symbol) { perform(action) }
                     .buttonStyle(IconButtonStyle(role: action == .cancel ? .destructive : nil))
                     .help(action.title)
@@ -91,6 +91,7 @@ struct DownloadRow: View {
             case .cancel: await model.cancel(ids)
             case .reveal: model.reveal(ids)
             case .remove: await model.remove(ids)
+            case .refreshLink: model.refreshing = download
             }
         }
     }
@@ -98,7 +99,15 @@ struct DownloadRow: View {
 
 /// Row actions per state; the same set drives hover buttons, the context menu and VoiceOver actions.
 enum RowAction: Hashable {
-    case pause, resume, retry, cancel, reveal, remove
+    case pause, resume, retry, cancel, reveal, remove, refreshLink
+
+    static func available(for download: Download) -> [RowAction] {
+        // Expired or forbidden links get Refresh Link instead of a plain retry (FR-ENG-09).
+        if download.state == .failed, case .http(let status)? = download.failure, [401, 403, 404, 410].contains(status) {
+            return [.refreshLink, .remove]
+        }
+        return available(for: download.state)
+    }
 
     static func available(for state: DownloadState) -> [RowAction] {
         switch state {
@@ -118,6 +127,7 @@ enum RowAction: Hashable {
         case .cancel: String(localized: "Cancel")
         case .reveal: String(localized: "Show in Finder")
         case .remove: String(localized: "Remove from List")
+        case .refreshLink: String(localized: "Refresh Link…")
         }
     }
 
@@ -129,6 +139,7 @@ enum RowAction: Hashable {
         case .cancel: "xmark"
         case .reveal: "magnifyingglass.circle"
         case .remove: "minus.circle"
+        case .refreshLink: "link"
         }
     }
 }

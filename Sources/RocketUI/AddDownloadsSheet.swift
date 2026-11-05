@@ -72,6 +72,8 @@ public struct AddDownloadsSheet: View {
             Text(linkCountText)
                 .font(.rocketLabel)
                 .foregroundStyle(RocketColor.textSecondary)
+            DisclosureGroup("Request options") { RequestOptions(model: model) }
+                .font(.rocketLabel)
         }
     }
 
@@ -212,5 +214,99 @@ private struct CandidateRow: View {
         case .inList: String(localized: "Already in your downloads:")
         case .fileExists: String(localized: "A file with this name exists:")
         }
+    }
+}
+
+/// Headers, referrer, user agent, cookies and Basic auth for sites that need them (FR-ADD-04).
+private struct RequestOptions: View {
+    @Bindable var model: AddDownloadsModel
+
+    var body: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: RocketSpace.s3, verticalSpacing: RocketSpace.s2) {
+            field("Referrer", text: optional(\.referrer), prompt: "https://example.com/page")
+            field("User agent", text: optional(\.userAgent), prompt: "Default")
+            field("Cookies", text: optional(\.cookies), prompt: "name=value; other=value")
+            GridRow {
+                Text("Sign in").gridColumnAlignment(.trailing)
+                HStack {
+                    TextField("User name", text: optional(\.username))
+                    SecureField("Password", text: optional(\.password))
+                }
+            }
+            GridRow(alignment: .top) {
+                Text("Headers").gridColumnAlignment(.trailing)
+                TextField("Name: value, one per line", text: $model.headerText, axis: .vertical)
+                    .lineLimit(2...4)
+                    .font(.rocketMono)
+            }
+        }
+        .textFieldStyle(.roundedBorder)
+        .font(.rocketBody)
+        .padding(.top, RocketSpace.s2)
+        Text("Cookies and passwords are kept in your Keychain and only sent to the link's own site.")
+            .font(.rocketCaption)
+            .foregroundStyle(RocketColor.textSecondary)
+    }
+
+    private func field(_ label: LocalizedStringKey, text: Binding<String>, prompt: LocalizedStringKey) -> some View {
+        GridRow {
+            Text(label).gridColumnAlignment(.trailing)
+            TextField(label, text: text, prompt: Text(prompt))
+        }
+    }
+
+    private func optional(_ keyPath: WritableKeyPath<RequestContext, String?>) -> Binding<String> {
+        Binding { model.context[keyPath: keyPath] ?? "" } set: { model.context[keyPath: keyPath] = $0 }
+    }
+}
+
+/// Paste a fresh link for a download whose link expired (FR-ENG-09).
+public struct RefreshLinkSheet: View {
+    let download: Download
+    let onRefresh: (URL) async -> String?
+    @State private var text: String
+    @State private var error: String?
+    @State private var working = false
+    @Environment(\.dismiss) private var dismiss
+
+    public init(download: Download, onRefresh: @escaping (URL) async -> String?) {
+        self.download = download
+        self.onRefresh = onRefresh
+        let clipboard = LinkExtractor.urls(in: NSPasteboard.general.string(forType: .string) ?? "").first
+        _text = State(initialValue: clipboard?.absoluteString ?? "")
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: RocketSpace.s4) {
+            Text("Refresh link").font(.rocketTitle)
+            Text("Paste a new link to \(download.fileName). Rocket keeps the \(Format.bytes(download.receivedBytes)) already downloaded if it is the same file.")
+                .font(.rocketBody)
+                .foregroundStyle(RocketColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("https://", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .font(.rocketMono)
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle").font(.rocketLabel).foregroundStyle(RocketColor.danger)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Refresh and Resume") {
+                    guard let url = LinkExtractor.urls(in: text).first else { return error = String(localized: "That is not an http or https link.") }
+                    working = true
+                    Task {
+                        error = await onRefresh(url)
+                        working = false
+                        if error == nil { dismiss() }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(working || text.isEmpty)
+            }
+        }
+        .padding(RocketSpace.s6)
+        .frame(width: 480)
     }
 }

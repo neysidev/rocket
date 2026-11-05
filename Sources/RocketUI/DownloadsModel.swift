@@ -98,6 +98,8 @@ public final class DownloadsModel {
     /// Per-download speed samples for the last 60 s (5 Hz), for the detail view's chart.
     public private(set) var speedSamples: [UUID: [Double]] = [:]
     public var showsInspector = false
+    /// Download whose link is being refreshed.
+    public var refreshing: Download?
     /// Queue being edited (a new one has an unsaved id).
     public var editingQueue: DownloadQueue?
     private var polls = 0
@@ -297,6 +299,19 @@ public final class DownloadsModel {
     }
 
     // MARK: Queues
+
+    /// Returns an error message, or nil on success.
+    public func refreshLink(_ id: UUID, to url: URL) async -> String? {
+        guard let agent else { return String(localized: "Rocket's background agent is not running.") }
+        let result: String?
+        switch try? await agent.send(.refreshURL(id: id, url: url)) {
+        case .download?: result = nil
+        case .error(let message)?: result = message
+        default: result = String(localized: "Could not reach the background agent.")
+        }
+        await refresh()
+        return result
+    }
 
     // MARK: Details
 

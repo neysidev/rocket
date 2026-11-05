@@ -9,6 +9,7 @@ public actor DownloadScheduler {
     private let checkpoints: any CheckpointStore
     private let queueStore: any QueueRepository
     private let ruleStore: (any RuleRepository)?
+    private let contexts: (any RequestContextStore)?
     private let now: @Sendable () -> Date
     /// Runs a queue's after-action (sleep, shut down, …) once it has nothing left to do.
     private let runPostAction: @Sendable (DownloadQueue) async -> Void
@@ -40,7 +41,7 @@ public actor DownloadScheduler {
 
     public init(
         repository: any DownloadRepository, checkpoints: any CheckpointStore, queues: any QueueRepository,
-        rules: (any RuleRepository)? = nil,
+        rules: (any RuleRepository)? = nil, contexts: (any RequestContextStore)? = nil,
         transport: any HTTPTransport, maxActive: Int = 32, retry: RetryPolicy = RetryPolicy(),
         checkpointInterval: Duration = .seconds(2), defaults: RocketDefaults = RocketDefaults(),
         now: @escaping @Sendable () -> Date = { .now },
@@ -49,6 +50,7 @@ public actor DownloadScheduler {
     ) {
         queueStore = queues
         ruleStore = rules
+        self.contexts = contexts
         self.now = now
         self.runPostAction = runPostAction
         self.onActivityChange = onActivityChange
@@ -74,9 +76,10 @@ public actor DownloadScheduler {
     // MARK: Commands
 
     /// What the server says about a URL, for the add sheet.
-    public func probe(_ url: URL) async throws -> RemoteFileInfo {
+    public func probe(_ url: URL, context: RequestContext? = nil) async throws -> RemoteFileInfo {
         guard ["http", "https"].contains(url.scheme?.lowercased()) else { throw DownloadError.invalidURL }
-        return try await transport.probe(url)
+        try context?.validate()
+        return try await transport.probe(url, context: context)
     }
 
     /// Probes the URL (FR-ADD-02), stores the download and queues it. Each option resolves as: what the request
@@ -84,10 +87,10 @@ public actor DownloadScheduler {
     /// goes into its type's subfolder when auto-sort is on (FR-ORG-01).
     public func add(
         url: URL, folder: URL? = nil, fileName: String? = nil, connections: Int? = nil, speedLimit: Int64? = nil,
-        queueID: String? = nil
+        queueID: String? = nil, context: RequestContext? = nil
     ) async throws -> Download {
-        guard ["http", "https"].contains(url.scheme?.lowercased()) else { throw DownloadError.invalidURL }
-        let info = try await transport.probe(url)
+        let context = context?.isEmpty == true ? nil : context
+        let info = try await probe(url, context: context)
         let name = FileNameSanitizer.sanitize(fileName ?? info.suggestedFileName ?? url.lastPathComponent)
         let rule = DownloadRule.first(in: try await ruleStore?.rules() ?? [], url: url, fileName: name, size: info.totalBytes)
 
@@ -106,6 +109,7 @@ public actor DownloadScheduler {
         download.speedLimit = speedLimit ?? rule?.action.speedLimit
         download.queueID = queue
         try await repository.save(download)
+        if let context { try await contexts?.saveContext(context, for: download.id) }
         log(download.id, "Added: \(info.totalBytes.map { $0.formatted(.byteCount(style: .file)) } ?? "size unknown"), \(info.acceptsRanges ? "resumable" : "no range support")")
         if let rule { log(download.id, "Rule “\(rule.name)” applied") }
         log.info("Queued \(download.id, privacy: .public)")
@@ -163,6 +167,7 @@ public actor DownloadScheduler {
             try? FileManager.default.trashItem(at: download.fileURL, resultingItemURL: nil)
         }
         try await checkpoints.saveCheckpoint(downloadID: id, segments: [])
+        try await contexts?.deleteContext(for: id)
         try await repository.delete(id: id)
     }
 
@@ -180,6 +185,31 @@ public actor DownloadScheduler {
 
     public var globalLimit: Int64? {
         get async { await globalLimiter.bytesPerSecond }
+    }
+
+    /// FR-ENG-09: swap an expired link for a fresh one to the same file, keeping progress. The new URL must
+    /// report the same size; if the server's validators changed, the If-Range check restarts it honestly.
+    public func refreshURL(id: UUID, to url: URL) async throws -> Download {
+        if running[id] != nil { await stop(id, as: .paused) }
+        var download = try await existing(id)
+        guard download.state != .completed else { return download }
+        let info = try await probe(url, context: try await contexts?.context(for: id))
+        guard info.totalBytes == download.totalBytes else {
+            throw RefreshError.differentFile(expected: download.totalBytes, actual: info.totalBytes)
+        }
+        let previous = download.remoteInfo
+        download.url = url
+        download.remoteInfo = RemoteFileInfo(
+            finalURL: info.finalURL, totalBytes: info.totalBytes, acceptsRanges: info.acceptsRanges,
+            // Signed CDN links often lack validators; keep the old ones then so resume stays checked.
+            etag: info.etag ?? previous.etag, lastModified: info.lastModified ?? previous.lastModified
+        )
+        download.failure = nil
+        download.state = .queued
+        try await repository.save(download)
+        log(id, "Link refreshed; resuming from \(download.receivedBytes.formatted(.byteCount(style: .file)))")
+        try await fill()
+        return try await existing(id)
     }
 
     // MARK: Details
@@ -380,10 +410,11 @@ public actor DownloadScheduler {
         downloadLimiters[id] = limiter
         let limiters = [globalLimiter, queueLimiters[download.queueID], limiter].compactMap { $0 }
         let logEntry: @Sendable (LogEntry) -> Void = { entry in Task { await self.appendLog(id, entry) } }
+        let context = try await contexts?.context(for: id)
         let coordinator = DownloadCoordinator(
             url: download.finalURL ?? download.url, info: download.remoteInfo, file: file,
             segments: try await checkpoints.segments(downloadID: id), connections: download.connections,
-            transport: transport, retry: retry, limiters: limiters, onLog: logEntry, checkpointInterval: checkpointInterval,
+            transport: transport, retry: retry, limiters: limiters, context: context, onLog: logEntry, checkpointInterval: checkpointInterval,
             onCheckpoint: { try await checkpoints.saveCheckpoint(downloadID: id, segments: $0) }
         )
         coordinators[id] = coordinator
@@ -421,7 +452,7 @@ public actor DownloadScheduler {
                 // FR-ENG-06: the server copy changed. Restart from scratch once, and say why.
                 try? FileManager.default.removeItem(at: download.partFileURL)
                 try await checkpoints.saveCheckpoint(downloadID: id, segments: [])
-                download.remoteInfo = try await transport.probe(download.url)
+                download.remoteInfo = try await transport.probe(download.url, context: try await contexts?.context(for: id))
                 download.receivedBytes = 0
                 download.failure = .remoteFileChanged
                 download.state = .queued
@@ -448,6 +479,10 @@ public actor DownloadScheduler {
 extension DownloadState {
     /// The agent is working on it right now.
     var isRunning: Bool { [.probing, .downloading, .verifying].contains(self) }
+}
+
+public enum RefreshError: Error, Sendable, Equatable {
+    case differentFile(expected: Int64?, actual: Int64?)
 }
 
 public enum SchedulerError: Error, Sendable, Equatable {

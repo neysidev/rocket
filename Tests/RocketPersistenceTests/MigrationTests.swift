@@ -54,3 +54,31 @@ import Testing
     try await repo.deleteRule(id: rule.id)
     #expect(try await repo.rules().isEmpty)
 }
+
+final class MemorySecrets: SecretStore, @unchecked Sendable {
+    var items: [String: Data] = [:]
+    func secret(for account: String) -> Data? { items[account] }
+    func setSecret(_ data: Data?, for account: String) { items[account] = data }
+}
+
+@Test func requestContextKeepsSecretsOutOfSQLite() async throws {
+    let db = try RocketDatabase.inMemory()
+    let secrets = MemorySecrets()
+    let store = GRDBRequestContextStore(db: db, secrets: secrets)
+    let download = Download(url: URL(string: "https://example.com/a")!, destinationPath: "/tmp", fileName: "a")
+    try await GRDBDownloadRepository(db: db).save(download)
+    let id = download.id
+    let context = RequestContext(headers: ["X-A": "1"], referrer: "https://r", cookies: "session=SECRET1", username: "me", password: "SECRET2")
+    try await store.saveContext(context, for: id)
+    #expect(try await store.context(for: id) == context)
+
+    let dump = try await db.writer.read { db in
+        try String.fetchAll(db, sql: "SELECT headersJSON || ifnull(cookiesRef,'') || ifnull(referrer,'') FROM requestContext").joined()
+    }
+    #expect(!dump.contains("SECRET1") && !dump.contains("SECRET2"))
+    #expect(secrets.items[id.uuidString] != nil)
+
+    try await store.deleteContext(for: id)
+    #expect(try await store.context(for: id) == nil)
+    #expect(secrets.items.isEmpty)
+}

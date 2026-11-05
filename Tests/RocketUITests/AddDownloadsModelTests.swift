@@ -10,11 +10,11 @@ actor ProbingAgent: AgentCommanding {
 
     func send(_ command: Command) -> Reply {
         switch command {
-        case .probe(let url) where url.host == "broken.example":
+        case .probe(let url, _) where url.host == "broken.example":
             return .error("The file was not found on the server (404).")
-        case .probe(let url):
+        case .probe(let url, _):
             return .info(RemoteFileInfo(finalURL: url, totalBytes: 1_000_000, acceptsRanges: true, suggestedFileName: url.lastPathComponent))
-        case let .add(url, directory, fileName, _, _, _):
+        case let .add(url, directory, fileName, _, _, _, _):
             added.append(command)
             return .download(Download(url: url, destinationPath: directory ?? "/", fileName: fileName ?? "x"))
         default:
