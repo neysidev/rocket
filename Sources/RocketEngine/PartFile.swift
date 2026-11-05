@@ -42,6 +42,19 @@ public final class PartFile: @unchecked Sendable {
         guard fsync(descriptor) == 0 else { throw Self.error(errno, path: url.path) }
     }
 
+    /// Current length on disk.
+    public func size() throws -> Int64 {
+        var status = stat()
+        guard fstat(descriptor, &status) == 0 else { throw Self.error(errno, path: url.path) }
+        return Int64(status.st_size)
+    }
+
+    /// Records which download owns this part file, so leftovers can be matched after a crash.
+    public func tag(downloadID: UUID) {
+        let id = downloadID.uuidString
+        _ = fsetxattr(descriptor, "io.github.neysidev.rocket.download-id", id, id.utf8.count, 0, 0)
+    }
+
     /// Sets the final length (used when the size was unknown up front).
     public func truncate(to size: Int64) throws {
         guard ftruncate(descriptor, off_t(size)) == 0 else { throw Self.error(errno, path: url.path) }
