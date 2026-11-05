@@ -3,12 +3,14 @@ import SwiftUI
 
 @main
 struct RocketApp: App {
-    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+    @State private var agent = AgentConnection()
 
     var body: some Scene {
         WindowGroup("Rocket") {
             MainWindow()
+                .environment(agent)
                 .frame(minWidth: 760, minHeight: 480)
+                .task { await agent.connect() }
         }
         Settings {
             Text("Settings")
@@ -19,13 +21,5 @@ struct RocketApp: App {
             MenuBarPanel()
         }
         .menuBarExtraStyle(.window)
-    }
-}
-
-/// Needed when launched as a bare SPM executable (no Info.plist) so the window comes to front.
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
     }
 }

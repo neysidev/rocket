@@ -1,22 +1,19 @@
 #!/bin/sh
-# Build the app with SwiftPM, wrap it in a minimal .app bundle, and open it.
+# Generate the Xcode project, build the app (with rocketd and the rocket CLI inside), and open it.
 set -e
 cd "$(dirname "$0")/.."
-swift build --product Rocket
-APP=".build/Rocket Downloader.app"
-mkdir -p "$APP/Contents/MacOS"
-cp .build/debug/Rocket "$APP/Contents/MacOS/Rocket"
-cat > "$APP/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleIdentifier</key><string>io.github.neysidev.rocket</string>
-  <key>CFBundleName</key><string>Rocket</string>
-  <key>CFBundleExecutable</key><string>Rocket</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.0.1</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
-  <key>NSPrincipalClass</key><string>NSApplication</string>
-</dict></plist>
-PLIST
-open "$APP"
+
+# Use full Xcode even if xcode-select points at the Command Line Tools.
+if [ -z "$DEVELOPER_DIR" ] && [ -d /Applications/Xcode.app ]; then
+    export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+
+command -v xcodegen >/dev/null || { echo "Install XcodeGen: brew install xcodegen" >&2; exit 1; }
+xcodegen generate --quiet
+
+xcodebuild -project Rocket.xcodeproj -scheme Rocket -configuration Debug \
+    -derivedDataPath .build/xcode -quiet build
+
+osascript -e 'quit app "Rocket Downloader"' 2>/dev/null || true
+while pgrep -x "Rocket Downloader" >/dev/null; do sleep 0.2; done
+open ".build/xcode/Build/Products/Debug/Rocket Downloader.app"

@@ -5,8 +5,12 @@ let package = Package(
     name: "Rocket",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Rocket", targets: ["RocketApp"]),
-        .executable(name: "rocketd", targets: ["rocketd"]),
+        .library(name: "RocketCore", targets: ["RocketCore"]),
+        .library(name: "RocketEngine", targets: ["RocketEngine"]),
+        .library(name: "RocketNetworking", targets: ["RocketNetworking"]),
+        .library(name: "RocketPersistence", targets: ["RocketPersistence"]),
+        .library(name: "RocketIPC", targets: ["RocketIPC"]),
+        .library(name: "RocketDesign", targets: ["RocketDesign"]),
         .executable(name: "rocket", targets: ["RocketCLI"]),
     ],
     dependencies: [
@@ -28,17 +32,7 @@ let package = Package(
         // UI layer
         .target(name: "RocketDesign"),
 
-        // Processes (composition roots)
-        .executableTarget(
-            name: "RocketApp",
-            dependencies: ["RocketCore", "RocketIPC", "RocketDesign"],
-            path: "App"
-        ),
-        .executableTarget(
-            name: "rocketd",
-            dependencies: ["RocketCore", "RocketEngine", "RocketNetworking", "RocketPersistence", "RocketIPC"],
-            path: "Agent"
-        ),
+        // The app and rocketd are built by Rocket.xcodeproj (see project.yml); the CLI builds here too for `swift run rocket`.
         .executableTarget(
             name: "RocketCLI",
             dependencies: ["RocketIPC", .product(name: "ArgumentParser", package: "swift-argument-parser")]

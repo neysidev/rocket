@@ -9,3 +9,5 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build -Xswiftc -warnings-as-errors
       - run: swift test
+      - run: brew install xcodegen && xcodegen generate
+      - run: xcodebuild -project Rocket.xcodeproj -scheme Rocket -configuration Debug -derivedDataPath .build/xcode build

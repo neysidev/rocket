@@ -1,0 +1,116 @@
+# XcodeGen spec. Rocket.xcodeproj is generated from this file: run `xcodegen` (or ./Scripts/run-app.sh).
+name: Rocket
+options:
+  bundleIdPrefix: io.github.neysidev
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    ENABLE_HARDENED_RUNTIME: YES
+    ARCHS: "$(ARCHS_STANDARD)"
+    # Ad-hoc ("Sign to Run Locally") until a Developer ID team is configured.
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    MARKETING_VERSION: "0.0.1"
+    CURRENT_PROJECT_VERSION: "1"
+
+packages:
+  Rocket:
+    path: .
+  ArgumentParser:
+    url: https://github.com/apple/swift-argument-parser.git
+    from: "1.5.0"
+
+targets:
+  RocketApp:
+    type: application
+    platform: macOS
+    sources:
+      - App
+      - path: Agent/io.github.neysidev.rocket.agent.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
+    settings:
+      base:
+        PRODUCT_NAME: Rocket Downloader
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.neysidev.rocket
+        PRODUCT_MODULE_NAME: RocketApp
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Rocket
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 Mehdi (neysidev). Apache-2.0."
+    dependencies:
+      - package: Rocket
+        product: RocketCore
+      - package: Rocket
+        product: RocketIPC
+      - package: Rocket
+        product: RocketDesign
+      - target: rocketd
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
+      - target: RocketCLI
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
+
+  rocketd:
+    type: tool
+    platform: macOS
+    sources: [Agent]
+    excludes: ["*.plist"]
+    settings:
+      base:
+        PRODUCT_NAME: rocketd
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.neysidev.rocket.agent
+        GENERATE_INFOPLIST_FILE: YES
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+        SKIP_INSTALL: YES
+    dependencies:
+      - package: Rocket
+        product: RocketCore
+      - package: Rocket
+        product: RocketEngine
+      - package: Rocket
+        product: RocketNetworking
+      - package: Rocket
+        product: RocketPersistence
+      - package: Rocket
+        product: RocketIPC
+
+  RocketCLI:
+    type: tool
+    platform: macOS
+    sources: [Sources/RocketCLI]
+    settings:
+      base:
+        PRODUCT_NAME: rocket
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.neysidev.rocket.cli
+        GENERATE_INFOPLIST_FILE: YES
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+        SKIP_INSTALL: YES
+    dependencies:
+      - package: Rocket
+        product: RocketIPC
+      - package: ArgumentParser
+        product: ArgumentParser
+
+schemes:
+  Rocket:
+    build:
+      targets:
+        RocketApp: all
+    run:
+      config: Debug

@@ -3,11 +3,11 @@ import SwiftUI
 
 /// Placeholder shell: sidebar → list → (inspector later). Features land here from v0.1.
 struct MainWindow: View {
-    // ponytail: no @State yet — Command Line Tools ship without SwiftUI macro plugins; needs full Xcode.
+    @State private var selection: String? = "All downloads"
 
     var body: some View {
         NavigationSplitView {
-            List {
+            List(selection: $selection) {
                 Section("Status") {
                     Label("All downloads", systemImage: "tray.full").tag("All downloads")
                     Label("Active", systemImage: "arrow.down").tag("Active")
@@ -19,6 +19,7 @@ struct MainWindow: View {
                 }
             }
             .navigationSplitViewColumnWidth(RocketSize.sidebarWidth)
+            .safeAreaInset(edge: .bottom) { AgentStatusView().padding(RocketSpace.s4) }
         } detail: {
             EmptyState()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
