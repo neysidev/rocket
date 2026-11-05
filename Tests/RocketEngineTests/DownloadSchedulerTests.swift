@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import RocketCore
 import RocketEngine
@@ -165,6 +166,30 @@ actor MemoryRepository: DownloadRepository, CheckpointStore, QueueRepository, Ru
         #expect(done.state == .completed)
         #expect(try finalBytes(done) == RocketTestServer.content(count: size))
         #expect(try await scheduler.details(id: added.id).log.contains { $0.message.contains("woke up") })
+    }
+
+    @Test func verifiesChecksum() async throws {
+        let server = try await RocketTestServer()
+        let hex = SHA256.hash(data: RocketTestServer.content(count: size)).map { String(format: "%02x", $0) }.joined()
+        let added = try await scheduler.add(
+            url: server.url("/file/\(size)?name=good.bin"), folder: folder, checksum: Checksum(algorithm: .sha256, value: hex)
+        )
+        let done = try await wait(for: added.id, [.completed, .failed])
+        #expect(done.state == .completed)
+        #expect(try await scheduler.details(id: added.id).log.contains { $0.message == "SHA-256 checksum matches" })
+    }
+
+    @Test func discardsFileWhenChecksumDiffers() async throws {
+        let server = try await RocketTestServer()
+        let added = try await scheduler.add(
+            url: server.url("/file/\(size)?name=bad.bin"), folder: folder, checksum: Checksum(algorithm: .md5, value: String(repeating: "0", count: 32))
+        )
+        let done = try await wait(for: added.id, [.completed, .failed])
+        #expect(done.state == .failed)
+        #expect(done.failure == .checksumMismatch(algorithm: .md5))
+        #expect(!FileManager.default.fileExists(atPath: added.partFileURL.path))
+        #expect(!FileManager.default.fileExists(atPath: added.fileURL.path))
+        #expect(await repository.segments(downloadID: added.id).isEmpty)
     }
 
     @Test func rejectsNonHTTPURLs() async throws {

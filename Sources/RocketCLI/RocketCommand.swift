@@ -51,13 +51,15 @@ struct Add: AsyncParsableCommand {
     @Option(name: .customLong("user-agent"), help: "User-Agent header.") var userAgent: String?
     @Option(help: "Cookie header value (stored in the Keychain).") var cookie: String?
     @Option(help: "HTTP Basic credentials, user:password (password stored in the Keychain).") var user: String?
-    @Flag(help: "Wait until the download finishes; exit 1 if it fails.") var wait = false
+    @Option(help: "Expected checksum, e.g. sha256:ab12… (md5, sha1, sha256; bare hex is matched by length).") var checksum: String?
+    @Flag(help: "Wait until the download finishes; exit 1 if it fails, 4 if the checksum does not match.") var wait = false
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
         guard URL(string: url)?.scheme != nil else { throw ValidationError("Not a URL: \(url)") }
         if let connections, !(1...16).contains(connections) { throw ValidationError("--connections must be 1–16") }
         if let limit, ByteRate.parse(limit) == nil { throw ValidationError("Not a speed: \(limit). Try 2M or 500K.") }
+        if let checksum, Checksum(checksum) == nil { throw ValidationError("Not a checksum: \(checksum). Try sha256:<hex>.") }
     }
 
     func run() async throws {
@@ -71,13 +73,13 @@ struct Add: AsyncParsableCommand {
         )
         let reply = try await Agent.send(.add(
             url: URL(string: url)!, directory: directory, fileName: name, connections: connections,
-            speedLimit: limit.flatMap(ByteRate.parse), queueID: queueID, context: context
+            speedLimit: limit.flatMap(ByteRate.parse), queueID: queueID, context: context, checksum: checksum.flatMap(Checksum.init)
         ))
         guard case .download(let download) = reply else { throw Agent.unexpected(reply) }
         guard wait else { return Output.print(download, json: json) }
         let finished = try await Agent.waitForEnd(of: download.id)
         Output.print(finished, json: json)
-        if finished.state != .completed { throw ExitCode.failure }
+        try Agent.exit(for: [finished])
     }
 }
 
@@ -112,7 +114,7 @@ struct List: AsyncParsableCommand {
 
 struct Wait: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Wait until downloads finish; exit 1 if any failed or was cancelled.",
+        abstract: "Wait until downloads finish; exit 1 if any failed or was cancelled, 4 on a checksum mismatch.",
         discussion: "With no IDs, waits for every queued or running download (paused ones wait for you, so they are skipped)."
     )
     @Argument(help: "Download IDs or unique prefixes of them.") var ids: [String] = []
@@ -127,7 +129,7 @@ struct Wait: AsyncParsableCommand {
         var finished: [Download] = []
         for id in targets { finished.append(try await Agent.waitForEnd(of: id)) }
         if json { Output.printJSON(finished) } else { finished.forEach { Output.print($0, json: false) } }
-        if finished.contains(where: { $0.state != .completed }) { throw ExitCode.failure }
+        try Agent.exit(for: finished)
     }
 }
 
@@ -416,6 +418,12 @@ enum Agent {
             Output.progress(download)
             try await Task.sleep(for: .milliseconds(200))
         }
+    }
+
+    /// Exit 4 if a checksum did not match, 1 if anything else did not complete.
+    static func exit(for finished: [Download]) throws {
+        if finished.contains(where: { if case .checksumMismatch = $0.failure { true } else { false } }) { throw ExitCode(4) }
+        if finished.contains(where: { $0.state != .completed }) { throw ExitCode.failure }
     }
 
     static func unexpected(_ reply: Reply) -> any Error {

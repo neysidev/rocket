@@ -34,12 +34,12 @@ struct AgentPeerHandler: XPCPeerHandler {
     private func handle(_ command: Command) async -> Reply {
         do {
             switch command {
-            case let .add(url, directory, fileName, connections, speedLimit, queueID, context):
+            case let .add(url, directory, fileName, connections, speedLimit, queueID, context, checksum):
                 // Unset options come from rules, then the app's settings (resolved by the scheduler).
                 let folder = directory.map { URL(filePath: ($0 as NSString).expandingTildeInPath, directoryHint: .isDirectory) }
                 return .download(try await scheduler.add(
                     url: url, folder: folder, fileName: fileName, connections: connections, speedLimit: speedLimit,
-                    queueID: queueID, context: context
+                    queueID: queueID, context: context, checksum: checksum
                 ))
             case let .refreshURL(id, url):
                 return .download(try await scheduler.refreshURL(id: id, to: url))

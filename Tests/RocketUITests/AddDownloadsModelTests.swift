@@ -14,7 +14,7 @@ actor ProbingAgent: AgentCommanding {
             return .error("The file was not found on the server (404).")
         case .probe(let url, _):
             return .info(RemoteFileInfo(finalURL: url, totalBytes: 1_000_000, acceptsRanges: true, suggestedFileName: url.lastPathComponent))
-        case let .add(url, directory, fileName, _, _, _, _):
+        case let .add(url, directory, fileName, _, _, _, _, _):
             added.append(command)
             return .download(Download(url: url, destinationPath: directory ?? "/", fileName: fileName ?? "x"))
         default:

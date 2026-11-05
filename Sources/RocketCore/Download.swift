@@ -27,6 +27,9 @@ public struct Download: Codable, Sendable, Identifiable, Hashable {
     public var speedLimit: Int64?
     /// Why the download failed, or why it was restarted (e.g. `.remoteFileChanged`).
     public var failure: DownloadError?
+    // Expected checksum, stored flat in the `checksumKind` / `checksum` columns; use `expectedChecksum`.
+    var checksumKind: Checksum.Algorithm?
+    var checksum: String?
 
     public init(
         id: UUID = UUID(),
@@ -67,6 +70,15 @@ public struct Download: Codable, Sendable, Identifiable, Hashable {
         }
     }
 
+    /// Verified before the file is moved into place (FR-ENG-10).
+    public var expectedChecksum: Checksum? {
+        get { checksumKind.flatMap { kind in checksum.map { Checksum(algorithm: kind, value: $0) } } }
+        set {
+            checksumKind = newValue?.algorithm
+            checksum = newValue?.value
+        }
+    }
+
     /// `<destination>/<fileName>.rocketpart`
     public var partFileURL: URL {
         URL(filePath: destinationPath, directoryHint: .isDirectory).appending(path: fileName + ".rocketpart")
@@ -80,7 +92,7 @@ public struct Download: Codable, Sendable, Identifiable, Hashable {
 extension Download {
     enum CodingKeys: String, CodingKey {
         case id, url, destinationPath, fileName, state, connections, position, createdAt, completedAt
-        case finalURL, totalBytes, acceptsRanges, etag, lastModified, receivedBytes, speedLimit, failure
+        case finalURL, totalBytes, acceptsRanges, etag, lastModified, receivedBytes, speedLimit, failure, checksumKind, checksum
         case queueID = "queueId"
     }
 
@@ -105,6 +117,8 @@ extension Download {
         receivedBytes = try c.decodeIfPresent(Int64.self, forKey: .receivedBytes) ?? 0
         speedLimit = try c.decodeIfPresent(Int64.self, forKey: .speedLimit)
         failure = try c.decodeIfPresent(DownloadError.self, forKey: .failure)
+        checksumKind = try c.decodeIfPresent(Checksum.Algorithm.self, forKey: .checksumKind)
+        checksum = try c.decodeIfPresent(String.self, forKey: .checksum)
     }
 }
 

@@ -10,6 +10,8 @@ public enum DownloadError: Error, Sendable, Hashable, Codable {
     /// The server returned the wrong bytes for a range (bad `Content-Range`).
     case invalidRangeResponse
     case sizeMismatch(expected: Int64, actual: Int64)
+    /// The finished file does not match the checksum the user gave (FR-ENG-10).
+    case checksumMismatch(algorithm: Checksum.Algorithm)
     case diskFull
     case destinationNotWritable(path: String)
     case invalidURL
@@ -37,7 +39,7 @@ public enum DownloadError: Error, Sendable, Hashable, Codable {
             [-1000, -1002, -1202, -1203, -1204, -1206].contains(code) ? .fatal : .transient
         case .remoteFileChanged, .diskFull: .needsUser
         case .invalidRangeResponse: .transient
-        case .sizeMismatch, .destinationNotWritable, .invalidURL, .io: .fatal
+        case .sizeMismatch, .checksumMismatch, .destinationNotWritable, .invalidURL, .io: .fatal
         }
     }
 
@@ -73,6 +75,7 @@ public extension DownloadError {
         case .remoteFileChanged: String(localized: "The file changed on the server, so the download restarted.")
         case .invalidRangeResponse: String(localized: "The server sent unexpected data.")
         case .sizeMismatch: String(localized: "The downloaded file has the wrong size.")
+        case .checksumMismatch(let algorithm): String(localized: "The downloaded file does not match the \(algorithm.title) checksum, so it was discarded.")
         case .diskFull: String(localized: "The disk is full.")
         case .destinationNotWritable: String(localized: "Rocket can't write to the destination folder.")
         case .invalidURL: String(localized: "Only http and https links are supported.")

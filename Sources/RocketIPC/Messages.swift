@@ -4,7 +4,7 @@ import RocketCore
 /// Public, versioned contract between `rocketd` and its clients (app, CLI, extensions).
 public enum RocketAPI {
     /// Bump major only with an ADR. Minor versions add optional fields only.
-    public static let version = APIVersion(major: 1, minor: 0)
+    public static let version = APIVersion(major: 1, minor: 1)
     /// Mach service name; the Team ID prefix is added at signing time.
     public static let machServiceName = "\(Rocket.bundleID).agent"
 }
@@ -29,7 +29,7 @@ public enum Command: Codable, Sendable, Hashable {
     /// `directory` defaults to ~/Downloads; `fileName` to what the server suggests.
     case add(
         url: URL, directory: String?, fileName: String? = nil, connections: Int? = nil, speedLimit: Int64? = nil,
-        queueID: String? = nil, context: RequestContext? = nil
+        queueID: String? = nil, context: RequestContext? = nil, checksum: Checksum? = nil
     )
     /// Replace an expired link, keeping progress (FR-ENG-09).
     case refreshURL(id: UUID, url: URL)

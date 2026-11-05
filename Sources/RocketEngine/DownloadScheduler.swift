@@ -87,7 +87,7 @@ public actor DownloadScheduler {
     /// goes into its type's subfolder when auto-sort is on (FR-ORG-01).
     public func add(
         url: URL, folder: URL? = nil, fileName: String? = nil, connections: Int? = nil, speedLimit: Int64? = nil,
-        queueID: String? = nil, context: RequestContext? = nil
+        queueID: String? = nil, context: RequestContext? = nil, checksum: Checksum? = nil
     ) async throws -> Download {
         let context = context?.isEmpty == true ? nil : context
         let info = try await probe(url, context: context)
@@ -108,6 +108,7 @@ public actor DownloadScheduler {
         download.remoteInfo = info
         download.speedLimit = speedLimit ?? rule?.action.speedLimit
         download.queueID = queue
+        download.expectedChecksum = checksum
         try await repository.save(download)
         if let context { try await contexts?.saveContext(context, for: download.id) }
         log(download.id, "Added: \(info.totalBytes.map { $0.formatted(.byteCount(style: .file)) } ?? "size unknown"), \(info.acceptsRanges ? "resumable" : "no range support")")
@@ -442,6 +443,16 @@ public actor DownloadScheduler {
         try await set(&download, .verifying)
         let knownTotal = await coordinator.totalBytes
         let total = try knownTotal ?? file.size()
+        if let expected = download.expectedChecksum {
+            log(id, "Verifying \(expected.algorithm.title) checksum")
+            guard try await ChecksumVerifier.digest(expected.algorithm, of: file.url) == expected.value else {
+                // The bytes are wrong somewhere; a retry must start over, not resume them.
+                try? FileManager.default.removeItem(at: file.url)
+                try await checkpoints.saveCheckpoint(downloadID: id, segments: [])
+                throw DownloadError.checksumMismatch(algorithm: expected.algorithm)
+            }
+            log(id, "\(expected.algorithm.title) checksum matches")
+        }
         let final = try DownloadFinalizer.finalize(file, expectedBytes: total, folder: folder, fileName: download.fileName, source: download.url)
         try await checkpoints.saveCheckpoint(downloadID: id, segments: [])
         download.fileName = final.lastPathComponent
