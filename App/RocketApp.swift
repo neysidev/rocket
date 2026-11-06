@@ -102,10 +102,6 @@ struct MenuBarContent: View {
         MenuBarPanel(model: downloads, openMainWindow: {
             openWindow(id: "main")
             NSApp.activate()
-        }, openCommandPalette: {
-            openWindow(id: "main")
-            NSApp.activate()
-            downloads.isCommandPaletteOpen = true
         })
     }
 }
