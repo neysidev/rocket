@@ -235,11 +235,11 @@ These are the product-level qualities users will notice; the TRD turns each into
 
 ## Open-source and community
 
-Rocket is Apache-2.0 licensed, developed in public on GitHub, and governed by its maintainer until a core team forms.
+Rocket is MIT licensed, developed in public on GitHub, and governed by its maintainer until a core team forms.
 
 | Topic | Decision | Why |
 | --- | --- | --- |
-| License | Apache License 2.0 | Permissive like MIT, plus an explicit patent grant; same license as Swift; keeps a future App Store build possible (GPL would not) |
+| License | MIT License | Short, permissive and widely understood; keeps a future App Store build possible (GPL would not) |
 | Contributions | Developer Certificate of Origin (DCO) sign-off on every commit; no CLA | Low friction, legally clear provenance |
 | Governance | Maintainer-led (neysidev) at start; documented path to a core team after 1.0 in `GOVERNANCE.md` | Fast decisions early, shared ownership later |
 | Code of conduct | Contributor Covenant 2.1 | Industry standard, enforceable |

@@ -25,7 +25,7 @@ Each decision below becomes an ADR in `docs/adr/` (MADR format) before v0.1.
 | 0005 | Persistence with GRDB (SQLite) in the daemon | SwiftData, Core Data | Explicit migrations, Sendable records, cheap frequent writes |
 | 0006 | Dynamic segmentation (split largest remaining range) | Static N-way split | Keeps every connection busy to the end |
 | 0007 | Minimal dependencies: GRDB, Sparkle, swift-argument-parser only in shipped code | Allowing convenience packages | Supply-chain and maintenance risk |
-| 0008 | Apache-2.0 license with DCO sign-off | MIT, GPL-3.0 | Patent grant; keeps App Store option open |
+| 0008 | MIT license with DCO sign-off | Apache-2.0, GPL-3.0 | Simplest permissive license; keeps App Store option open |
 | 0009 | Ports-and-adapters module layout with one-way dependencies | Single app target | Testability, parallel contribution, clear ownership |
 | 0010 | Bundle ID `io.github.neysidev.rocket` | — | No personal domain confirmed yet; must be final before v0.1 |
 
@@ -324,7 +324,7 @@ The repository meets GitHub's community standards and the OpenSSF Best Practices
 | File | Content |
 | --- | --- |
 | `README.md` | What Rocket is, screenshots, install (DMG, Homebrew), build from source, links to docs |
-| `LICENSE` | Apache License 2.0; `NOTICE` lists third-party attributions |
+| `LICENSE` | MIT License; `NOTICE` lists third-party attributions |
 | `CONTRIBUTING.md` | Setup in under 10 minutes, workflow, commit and PR rules, DCO, how to run tests and benchmarks |
 | `CODE_OF_CONDUCT.md` | Contributor Covenant 2.1, enforcement contacts |
 | `SECURITY.md` | Supported versions, private reporting via GitHub Security Advisories, 90-day coordinated disclosure, response in 72 h |

@@ -68,7 +68,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Rocket
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
-        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 Mehdi (neysidev). Apache-2.0."
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 Mehdi (neysidev). MIT License."
     dependencies:
       - package: Rocket
         product: RocketCore

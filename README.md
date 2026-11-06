@@ -9,7 +9,7 @@
   <a href="https://github.com/neysidev/rocket/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/neysidev/rocket/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Platform: macOS 14+" src="https://img.shields.io/badge/platform-macOS%2014%2B-black">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
-  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
   <img alt="Status: pre-release" src="https://img.shields.io/badge/status-pre--release-orange">
 </p>
 
@@ -145,4 +145,4 @@ CI builds with warnings treated as errors, runs `swift test` and builds the Xcod
 
 ## License
 
-Rocket is licensed under the [Apache License 2.0](LICENSE). Third-party notices, for [GRDB.swift](https://github.com/groue/GRDB.swift) (MIT) and [swift-argument-parser](https://github.com/apple/swift-argument-parser) (Apache-2.0), are in [NOTICE](NOTICE).
+Rocket is licensed under the [MIT License](LICENSE). Third-party notices, for [GRDB.swift](https://github.com/groue/GRDB.swift) (MIT) and [swift-argument-parser](https://github.com/apple/swift-argument-parser) (Apache-2.0), are in [NOTICE](NOTICE).
