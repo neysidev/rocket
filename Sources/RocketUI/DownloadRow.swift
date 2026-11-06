@@ -5,40 +5,119 @@ import RocketDesign
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Percent and a thin bar. Completed rows settle on a full track.
-struct ProgressCell: View {
+/// File icon, name and one quiet line of context: the error for failed rows, queue position, otherwise the source.
+struct NameCell: View {
     let item: DownloadItem
-    @State private var completionFlash = false
+    var queuePosition: Int?
+
+    private var download: Download { item.download }
 
     var body: some View {
-        let download = item.download
-        let active = download.state.isTransferring || download.state == .paused || completionFlash
-        HStack(spacing: 8) {
-            RocketProgressBar(
-                fraction: completionFlash || download.state == .completed ? 1 : item.fraction,
-                tint: completionFlash || download.state == .completed ? RocketColor.success
-                    : download.state == .paused ? RocketColor.textTertiary : RocketColor.accent
-            )
-            Text(percent)
-                .font(.rocketCaption)
-                .monospacedDigit()
-                .foregroundStyle(active ? RocketColor.textSecondary : RocketColor.textTertiary)
-                .frame(width: 34, alignment: .trailing)
-        }
-        .onChange(of: download.state) { previous, state in
-            guard state == .completed, previous != .completed else { return }
-            completionFlash = true
-            Task {
-                try? await Task.sleep(for: RocketMotion.completionFlash)
-                if !Task.isCancelled { completionFlash = false }
+        HStack(spacing: 10) {
+            FileThumbnail(item: item, size: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(download.fileName)
+                    .font(.rocketBody)
+                    .foregroundStyle(download.state == .cancelled ? RocketColor.textSecondary : RocketColor.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(download.state == .failed ? RocketColor.danger : RocketColor.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+        }
+        .frame(minHeight: 34)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(item.accessibilityLabel)
+    }
+
+    private var detail: String {
+        let host = download.url.host() ?? download.url.absoluteString
+        switch download.state {
+        case .failed: return download.failure?.userMessage ?? host
+        case .queued: return [queuePosition.map { String(localized: "#\($0) in queue") }, host].compactMap { $0 }.joined(separator: " · ")
+        default: return host
+        }
+    }
+}
+
+/// One line per state: "62% · 4.2 MB/s" over a slim bar while transferring, "Paused · 35%", "Completed",
+/// or a short error. Paused and failed rows get the one action they need (Resume, Retry, Refresh Link).
+struct StatusCell: View {
+    let item: DownloadItem
+    let model: DownloadsModel
+
+    private var download: Download { item.download }
+
+    var body: some View {
+        Group {
+            if download.state.isTransferring {
+                VStack(alignment: .leading, spacing: 5) {
+                    RocketProgressBar(fraction: item.fraction, height: 4)
+                    Text(label)
+                        .font(.subheadline)
+                        .foregroundStyle(RocketColor.textSecondary)
+                        .lineLimit(1)
+                }
+                .padding(.trailing, RocketSpace.s3)
+            } else {
+                HStack(spacing: 6) {
+                    StatusGlyph(download.state.glyph(item.fraction), size: 11)
+                    Text(label)
+                        .font(.rocketLabel)
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: RocketSpace.s2)
+                    actionButton
+                }
+            }
+        }
+        .monospacedDigit()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(download.state == .failed ? download.failure?.userMessage ?? "" : "")
+    }
+
+    /// Resume for paused rows; Retry or Refresh Link for failed ones.
+    @ViewBuilder private var actionButton: some View {
+        if download.state == .paused || download.state == .failed,
+           let action = RowAction.available(for: download).first(where: { [.resume, .retry, .refreshLink].contains($0) }) {
+            Button { action.perform(on: download, model: model) } label: {
+                Label(action.title, systemImage: action.symbol)
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .font(.subheadline)
+            .fixedSize()
+            .help(action.title)
         }
     }
 
-    private var percent: String {
-        if item.download.state == .completed || completionFlash { return "100%" }
-        guard let fraction = item.fraction else { return "—" }
-        return fraction.formatted(.percent.precision(.fractionLength(0)))
+    private var percent: String? {
+        item.fraction.map { $0.formatted(.percent.precision(.fractionLength(0))) }
+    }
+
+    private var label: String {
+        switch download.state {
+        case .downloading:
+            var parts = [percent].compactMap { $0 }
+            if item.speed > 0 { parts.append(Format.speed(item.speed)) }
+            return parts.isEmpty ? download.state.title : parts.joined(separator: " · ")
+        case .paused: return [download.state.title, percent].compactMap { $0 }.joined(separator: " · ")
+        case .failed: return download.failure?.shortMessage ?? download.state.title
+        case .probing, .verifying, .queued, .completed, .cancelled: return download.state.title
+        }
+    }
+
+    private var color: Color {
+        switch download.state {
+        case .completed: RocketColor.textSecondary
+        case .paused: RocketColor.warning
+        case .failed: RocketColor.danger
+        default: download.state.textColor
+        }
     }
 }
 

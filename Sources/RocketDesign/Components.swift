@@ -60,17 +60,34 @@ public extension PrimitiveButtonStyle where Self == IconButtonStyle {
 public struct RocketProgressBar: View {
     let fraction: Double?
     let tint: Color
+    /// 0 keeps the system bar; a positive height draws a slim capsule (table rows).
+    let height: CGFloat
 
     public init(fraction: Double?, tint: Color = RocketColor.accent, height: CGFloat = 0) {
         self.fraction = fraction
         self.tint = tint
+        self.height = height
     }
 
     public var body: some View {
-        ProgressView(value: min(1, max(0, fraction ?? 0)))
-            .progressViewStyle(.linear)
-        .controlSize(.small)
-        .tint(tint)
+        Group {
+            if height > 0 {
+                Capsule().fill(RocketColor.track.opacity(0.6))
+                    .overlay(alignment: .leading) {
+                        GeometryReader { proxy in
+                            Capsule().fill(tint)
+                                .frame(width: proxy.size.width * min(1, max(0, fraction ?? 0)))
+                                .animation(RocketMotion.progress, value: fraction)
+                        }
+                    }
+                    .frame(height: height)
+            } else {
+                ProgressView(value: min(1, max(0, fraction ?? 0)))
+                    .progressViewStyle(.linear)
+                    .controlSize(.small)
+                    .tint(tint)
+            }
+        }
         .accessibilityHidden(true)
     }
 }

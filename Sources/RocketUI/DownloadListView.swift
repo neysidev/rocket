@@ -68,43 +68,35 @@ public struct DownloadListView: View {
         let positions = model.queuePositions
         return Table(of: DownloadItem.self, selection: $model.selection, columnCustomization: $columns) {
             TableColumn("Name") { item in
-                HStack(spacing: 6) {
-                    StatusGlyph(item.download.state.glyph(item.fraction), size: 12)
-                        .help(Self.statusHelp(item, position: positions[item.id]))
-                    FileThumbnail(item: item, size: 16)
-                    Text(item.download.fileName).lineLimit(1).truncationMode(.middle)
-                        .help(item.download.fileName)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(item.accessibilityLabel)
+                NameCell(item: item, queuePosition: positions[item.id])
+                    .help(Self.statusHelp(item, position: positions[item.id]))
             }
-            .width(min: 180, ideal: 340)
+            .width(min: 220, ideal: 420)
             .customizationID("name")
             .disabledCustomizationBehavior(.visibility)
-            TableColumn("Progress") { item in ProgressCell(item: item) }
-                .width(min: 90, ideal: 150)
+            TableColumn("Progress") { item in StatusCell(item: item, model: model) }
+                .width(min: 130, ideal: 190, max: 280)
                 .customizationID("progress")
             TableColumn("Size") { item in
-                Text(Self.shortSize(item.download))
+                Text(Self.shortSize(item))
+                    .font(.rocketLabel)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, RocketSpace.s3)
             }
-            .width(min: 56, ideal: 80, max: 110)
+            .width(min: 80, ideal: 130, max: 180)
             .customizationID("size")
-            TableColumn("Speed") { item in
-                Text(Self.speedText(item))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+            TableColumn("Date") { item in
+                Text(item.download.completedAt ?? item.download.createdAt,
+                     format: .dateTime.month(.abbreviated).day().hour().minute())
+                    .font(.rocketLabel)
+                    .foregroundStyle(item.download.state == .completed ? .secondary : .tertiary)
+                    .lineLimit(1)
+                    .help(item.download.completedAt == nil ? "Added" : "Completed")
             }
-            .width(min: 64, ideal: 84, max: 120)
-            .customizationID("speed")
-            TableColumn("Date Added") { item in
-                Text(item.download.createdAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-                    .foregroundStyle(.secondary)
-            }
-            .width(min: 80, ideal: 120)
+            .width(min: 90, ideal: 120)
             .customizationID("date")
         } rows: {
             ForEach(items) { item in
@@ -134,11 +126,17 @@ public struct DownloadListView: View {
         Task { await model.move(ids, toQueue: queueID, before: before) }
     }
 
-    /// Total size when known. Progress already shows how much has arrived.
-    static func shortSize(_ download: Download) -> String {
-        if let total = download.totalBytes { return Format.bytes(total) }
-        if download.receivedBytes > 0 { return Format.bytes(download.receivedBytes) }
-        return "—"
+    /// "12 MB of 40 MB" while bytes are arriving, the total otherwise.
+    static func shortSize(_ item: DownloadItem) -> String {
+        let download = item.download
+        let total = download.totalBytes.map(Format.bytes)
+        switch download.state {
+        case .downloading, .verifying, .paused:
+            return total.map { "\(Format.bytes(download.receivedBytes)) of \($0)" } ?? Format.bytes(download.receivedBytes)
+        default:
+            if let total { return total }
+            return download.receivedBytes > 0 ? Format.bytes(download.receivedBytes) : "—"
+        }
     }
 
     /// "Paused", "#2 in queue", or the failure message.
@@ -147,10 +145,6 @@ public struct DownloadListView: View {
         if let failure = download.failure, download.state == .failed { return "\(download.state.title): \(failure.userMessage)" }
         if download.state == .queued, let position { return String(localized: "Queued, #\(position) in queue") }
         return download.state.title
-    }
-
-    static func speedText(_ item: DownloadItem) -> String {
-        item.download.state.isTransferring && item.speed > 0 ? Format.speed(item.speed) : "—"
     }
 }
 
@@ -347,11 +341,15 @@ struct EmptyStateView: View {
     }
 }
 
-/// Source list: status filters and queues with live counts. Downloads can be dropped on a queue to move them there.
+/// Source list: Library status filters and Queues with live counts. Downloads can be dropped on a queue to move them there.
 public struct DownloadSidebar<Footer: View>: View {
     @Bindable var model: DownloadsModel
     let footer: Footer
     @State private var dropQueue: String?
+    @State private var renaming: String?
+    @State private var draftName = ""
+    @State private var deleting: DownloadQueue?
+    @FocusState private var renameFocused: Bool
 
     public init(model: DownloadsModel, @ViewBuilder footer: () -> Footer) {
         self.model = model
@@ -360,7 +358,7 @@ public struct DownloadSidebar<Footer: View>: View {
 
     public var body: some View {
         List(selection: Binding<SidebarFilter?>(get: { model.filter }, set: { if let filter = $0 { model.filter = filter } })) {
-            Section {
+            Section("Library") {
                 ForEach(SidebarFilter.statuses) { filter in
                     Label { Text(filter.title) } icon: { SidebarIcon(filter.tile) }
                         .badge(model.count(filter))
@@ -381,11 +379,65 @@ public struct DownloadSidebar<Footer: View>: View {
             }
         }
         .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer.padding(8) }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Divider()
+                SettingsLink {
+                    Label("Settings", systemImage: "gearshape")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .help("Settings (⌘,)")
+                footer.padding(.horizontal, 8)
+            }
+            .padding(.bottom, 8)
+        }
+        .confirmationDialog(
+            "Delete “\(deleting?.name ?? "")”?",
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            presenting: deleting
+        ) { queue in
+            Button("Delete Queue", role: .destructive) { Task { await model.deleteQueue(queue.id) } }
+        } message: { queue in
+            let count = model.count(.queue(queue.id))
+            if count == 0 { Text("This queue is empty.") } else { Text("Its \(count) downloads move to the Default queue.") }
+        }
+    }
+
+    @ViewBuilder private func queueName(_ queue: DownloadQueue) -> some View {
+        if renaming == queue.id {
+            TextField("Queue name", text: $draftName)
+                .textFieldStyle(.plain)
+                .focused($renameFocused)
+                .onAppear { renameFocused = true }
+                .onSubmit { commitRename(queue) }
+                .onExitCommand { renaming = nil }
+                .onChange(of: renameFocused) { _, focused in if !focused { commitRename(queue) } }
+        } else {
+            Text(queue.name)
+        }
+    }
+
+    private func startRename(_ queue: DownloadQueue) {
+        draftName = queue.name
+        renaming = queue.id
+    }
+
+    private func commitRename(_ queue: DownloadQueue) {
+        guard renaming == queue.id else { return }
+        renaming = nil
+        let name = draftName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, name != queue.name else { return }
+        var renamed = queue
+        renamed.name = name
+        Task { await model.saveQueue(renamed) }
     }
 
     private func queueRow(_ queue: DownloadQueue) -> some View {
-        Label { Text(queue.name) } icon: { SidebarIcon(Self.tile(for: queue)) }
+        Label { queueName(queue) } icon: { SidebarIcon(Self.tile(for: queue)) }
             .badge(model.count(.queue(queue.id)))
             .tag(SidebarFilter.queue(queue.id))
             .help(queue.schedule?.summary ?? "")
@@ -404,10 +456,12 @@ public struct DownloadSidebar<Footer: View>: View {
                 } else {
                     Button("Resume Queue") { Task { await model.resumeQueue(queue.id) } }
                 }
+                Divider()
+                Button("Rename") { startRename(queue) }
                 Button("Edit Queue…") { model.editingQueue = queue }
                 if !queue.isDefault {
                     Divider()
-                    Button("Delete Queue", role: .destructive) { Task { await model.deleteQueue(queue.id) } }
+                    Button("Delete Queue…", role: .destructive) { deleting = queue }
                 }
             }
     }
