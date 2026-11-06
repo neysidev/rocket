@@ -20,8 +20,8 @@ public struct DownloadListView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle(model.title(for: model.filter))
             .navigationSubtitle(subtitle(count: items.count))
-            .searchable(text: $model.search, isPresented: $model.isSearching, placement: .toolbar, prompt: Text("Search"))
-            .toolbar { DownloadToolbar(model: model) }
+            .searchable(text: $model.search, isPresented: $model.isSearching, placement: .toolbar, prompt: Text("Search names and links"))
+            .toolbar { DownloadToolbar(model: model, visibleIDs: items.map(\.id)) }
             .inspector(isPresented: Binding(get: { model.detailsID != nil }, set: { if !$0 { model.detailsID = nil } })) {
                 Group {
                     if let id = model.detailsID { DownloadDetailView(model: model, id: id) }
@@ -32,6 +32,12 @@ public struct DownloadListView: View {
                 // The open inspector follows the selected row.
                 if model.detailsID != nil, selection.count == 1 { model.detailsID = selection.first }
             }
+            .onChange(of: items.map(\.id)) { _, ids in
+                // Bulk actions only ever touch rows you can see: drop selected rows that a filter or search hid.
+                let visible = model.selection.intersection(ids)
+                if visible != model.selection { model.selection = visible }
+            }
+            .onExitCommand { model.selection = [] }
             .onDeleteCommand {
                 let ids = model.selection
                 guard !ids.isEmpty else { return }
@@ -148,35 +154,74 @@ public struct DownloadListView: View {
     }
 }
 
-/// New Download first and prominent, then filter, sort and queue controls. Search is the system field.
+/// Default bar: New Download (prominent), Filter, Sort, search (system field), More.
+/// With rows selected it becomes a contextual bar: count, then only the bulk actions the selection allows.
 private struct DownloadToolbar: ToolbarContent {
     @Bindable var model: DownloadsModel
+    let visibleIDs: [UUID]
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Button { model.beginAdding() } label: {
-                Label("New Download", systemImage: "plus")
-            }
-            .buttonStyle(.borderedProminent)
-            .labelStyle(.iconOnly)
-            .help("New Download (⌘N)")
-        }
-        ToolbarItemGroup(placement: .primaryAction) {
-            filterMenu
-            if !isQueue { sortMenu }
-            if case .queue(let id) = model.filter, let queue = model.queues.first(where: { $0.id == id }) {
-                if model.queueIsRunning(id) {
-                    Button { Task { await model.pauseQueue(id) } } label: { Label("Pause Queue", systemImage: "pause") }
-                        .help("Pause every download in this queue")
-                } else {
-                    Button { Task { await model.resumeQueue(id) } } label: { Label("Resume Queue", systemImage: "play") }
-                        .help("Resume this queue’s paused downloads")
+        if model.selection.isEmpty {
+            ToolbarItem(placement: .primaryAction) {
+                Button { model.beginAdding() } label: {
+                    Label("New Download", systemImage: "plus")
                 }
-                Button { model.editingQueue = queue } label: { Label("Edit Queue", systemImage: "slider.horizontal.3") }
-                    .help("Edit Queue")
+                .buttonStyle(.borderedProminent)
+                .labelStyle(.titleAndIcon)
+                .help("Add a download from a link (⌘N)")
             }
+            ToolbarItemGroup(placement: .primaryAction) {
+                filterMenu
+                if !isQueue { sortMenu }
+                moreMenu
+            }
+        } else {
+            selectionItems
         }
     }
+
+    // MARK: Selection bar
+
+    @ToolbarContentBuilder
+    private var selectionItems: some ToolbarContent {
+        let ids = model.selection
+        let states = ids.compactMap(model.download).map(\.state)
+        let paused = ids.filter { model.download($0)?.state == .paused }
+        let failed = ids.filter { model.download($0)?.state == .failed }
+        ToolbarItem(placement: .primaryAction) {
+            Text("\(ids.count) selected")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .accessibilityLabel("\(ids.count) downloads selected")
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            if states.contains(where: \.isActive) {
+                Button { Task { await model.pause(ids) } } label: { Label("Pause", systemImage: "pause") }
+                    .help("Pause the selected downloads that are running (Space)")
+            }
+            if !paused.isEmpty {
+                Button { Task { await model.resume(paused) } } label: { Label("Resume", systemImage: "play") }
+                    .help("Resume the selected paused downloads")
+            }
+            if !failed.isEmpty {
+                Button { Task { await model.resume(failed) } } label: { Label("Retry", systemImage: "arrow.clockwise") }
+                    .help("Retry the selected failed downloads")
+            }
+            Button { Task { await model.remove(ids) } } label: { Label("Remove", systemImage: "minus.circle") }
+                .help("Remove the selected downloads from the list (⌫)")
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            if !Set(visibleIDs).isSubset(of: ids) {
+                Button { model.selection = Set(visibleIDs) } label: { Label("Select All", systemImage: "checklist.checked") }
+                    .help("Select every download in this view (⌘A)")
+            }
+            Button { model.selection = [] } label: { Label("Clear Selection", systemImage: "xmark.circle") }
+                .help("Clear the selection (Esc)")
+        }
+    }
+
+    // MARK: Default bar
 
     private var isQueue: Bool {
         if case .queue = model.filter { return true }
@@ -185,6 +230,9 @@ private struct DownloadToolbar: ToolbarContent {
 
     private var filterMenu: some View {
         Menu {
+            Picker("Status", selection: Binding<SidebarFilter>(get: { isQueue ? .all : model.filter }, set: { model.filter = $0 })) {
+                ForEach(SidebarFilter.statuses) { Label($0.title, systemImage: $0.symbol).tag($0) }
+            }
             Picker("Type", selection: $model.category) {
                 Text("Any Type").tag(FileCategory?.none)
                 Divider()
@@ -208,7 +256,8 @@ private struct DownloadToolbar: ToolbarContent {
             Label("Filter", systemImage: model.hasRefinements
                 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
         }
-        .help("Filter by type, size, date and source")
+        .labelStyle(.titleAndIcon)
+        .help(model.hasRefinements ? "Filters are on. Filter by status, type, size, date and source" : "Filter by status, type, size, date and source")
     }
 
     private var sortMenu: some View {
@@ -218,9 +267,40 @@ private struct DownloadToolbar: ToolbarContent {
             }
             .pickerStyle(.inline)
         } label: {
-            Label("Sort", systemImage: "arrow.up.arrow.down")
+            Label("Sort: \(model.sort.title)", systemImage: "arrow.up.arrow.down")
         }
-        .help("Sort by \(model.sort.title)")
+        .labelStyle(.titleAndIcon)
+        .help("Change the sort order")
+    }
+
+    /// Less frequent, list-wide operations. Same actions as the Download menu, so shortcuts stay discoverable.
+    private var moreMenu: some View {
+        Menu {
+            if case .queue(let id) = model.filter, let queue = model.queues.first(where: { $0.id == id }) {
+                Section(queue.name) {
+                    if model.queueIsRunning(id) {
+                        Button("Pause Queue", systemImage: "pause") { Task { await model.pauseQueue(id) } }
+                    } else {
+                        Button("Resume Queue", systemImage: "play") { Task { await model.resumeQueue(id) } }
+                    }
+                    Button("Edit Queue…", systemImage: "slider.horizontal.3") { model.editingQueue = queue }
+                }
+            }
+            Section {
+                Button("Pause All", systemImage: "pause.circle") { Task { await model.pauseAll() } }
+                    .disabled(!model.hasRunning)
+                Button("Resume All", systemImage: "play.circle") { Task { await model.resumeAll() } }
+                    .disabled(!model.hasPaused)
+            }
+            Section {
+                Button("Clear Completed", systemImage: "checkmark.circle.badge.xmark") { Task { await model.clearCompleted() } }
+                    .disabled(!model.hasFinished)
+                Button("Download Insights", systemImage: "chart.bar") { model.showInsights = true }
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis.circle")
+        }
+        .help("More actions")
     }
 }
 
