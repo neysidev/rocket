@@ -15,8 +15,8 @@ public struct QueueEditor: View {
 
     public var body: some View {
         RocketModalLayout(queue.isDefault ? String(localized: "Default queue") : String(localized: "Edit queue")) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: RocketSpace.s5) {
+            Form {
+                Group {
                     RocketFormSection {
                         RocketFormRow(String(localized: "Name")) {
                             TextField("Name", text: $queue.name).rocketField().frame(width: 200)
@@ -61,22 +61,17 @@ public struct QueueEditor: View {
                         }
                     }
                 }
-                .padding(.horizontal, RocketSpace.s6)
-                .padding(.bottom, RocketSpace.s5)
-                .animation(RocketMotion.enter, value: queue.schedule != nil)
             }
-            .frame(maxHeight: 460)
-            .fixedSize(horizontal: false, vertical: true)
+            .formStyle(.grouped)
+            .frame(height: 440)
         } actions: {
             Button("Cancel") { dismiss() }
-                .buttonStyle(.rocketGhost)
                 .keyboardShortcut(.cancelAction)
             Button("Save") {
                 onSave(queue)
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
-            .buttonStyle(.rocketPrimary)
             .disabled(queue.name.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .frame(width: 480)
@@ -97,31 +92,22 @@ public struct QueueEditor: View {
     }
 }
 
-/// Seven round toggles, Monday first where the locale starts weeks on Monday.
+/// Seven toggle buttons, in the locale's week order.
 struct WeekdayPicker: View {
     @Binding var days: Set<Int>
 
     var body: some View {
         let calendar = Calendar.current
         let order = (0..<7).map { (calendar.firstWeekday - 1 + $0) % 7 + 1 }
-        HStack(spacing: RocketSpace.s1 + 1) {
+        HStack(spacing: 2) {
             ForEach(order, id: \.self) { day in
-                let on = days.contains(day)
-                Button {
-                    if on { days.remove(day) } else { days.insert(day) }
-                } label: {
-                    Text(calendar.veryShortWeekdaySymbols[day - 1])
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(on ? RocketColor.accentText : RocketColor.textSecondary)
-                        .frame(width: 24, height: 24)
-                        .background(on ? RocketColor.accentSoft : RocketColor.control, in: Circle())
-                        .overlay(Circle().strokeBorder(on ? RocketColor.accent.opacity(0.5) : RocketColor.border))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .animation(RocketMotion.fast, value: on)
+                Toggle(calendar.veryShortWeekdaySymbols[day - 1], isOn: Binding(
+                    get: { days.contains(day) },
+                    set: { if $0 { days.insert(day) } else { days.remove(day) } }
+                ))
+                .toggleStyle(.button)
+                .controlSize(.small)
                 .accessibilityLabel(calendar.weekdaySymbols[day - 1])
-                .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
     }
@@ -135,7 +121,7 @@ struct TimeSelect: View {
     var body: some View {
         let steps = Set(stride(from: 0, to: 24 * 60, by: 15)).union([minutes]).sorted()
         RocketSelect(label, selection: $minutes, options: steps.map { RocketOption($0, Self.title($0)) })
-            .frame(width: 120)
+            .fixedSize()
     }
 
     static func title(_ minutes: Int) -> String {

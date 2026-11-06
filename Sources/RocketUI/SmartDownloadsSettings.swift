@@ -8,7 +8,7 @@ struct SmartDownloadsSettings: View {
     let model: DownloadsModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: RocketSpace.s6) {
+        Group {
             RocketFormSection(String(localized: "Smart categories"),
                               footer: String(localized: "Rocket groups downloads by file type in the list and can sort completed files into type folders automatically.")) {
                 RocketFormRow(String(localized: "Sort into folders by type"), detail: String(localized: "Video, Archives, Documents, …")) {
@@ -42,16 +42,13 @@ struct SmartDownloadsSettings: View {
                 }
             }
             RocketFormSection(String(localized: "Download rules"),
-                              footer: String(localized: "Rules match sites, file types and sizes, then set folder, queue, connections and speed.")) {
+                              footer: String(localized: "Rules match sites, file types and sizes, then set folder, queue, connections and speed. Edit them in the Rules tab.")) {
                 RocketFormRow(String(localized: "Active rules")) {
                     Text("\(model.rules.filter(\.enabled).count)")
-                        .font(.rocketBody.monospacedDigit())
-                        .foregroundStyle(RocketColor.textSecondary)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
                 }
             }
-            Text("Edit rules in the Rules section of Settings, or open Download Insights from the sidebar for throughput and source breakdown.")
-                .font(.rocketCaption)
-                .foregroundStyle(RocketColor.textTertiary)
         }
         .task { await model.refreshRules() }
     }

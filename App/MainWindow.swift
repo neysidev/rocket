@@ -3,51 +3,18 @@ import RocketDesign
 import RocketUI
 import SwiftUI
 
-/// Sidebar, download table, and an inspector when a download is open. Dialogs stay Rocket modals.
+/// Standard source-list window: sidebar, download table with toolbar and search, and an inspector.
 struct MainWindow: View {
     @Bindable var downloads: DownloadsModel
     @Environment(\.soundEffects) private var soundEffects
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let compactNav = width < 980
-            let inlineInspector = downloads.detailsID != nil && width >= 1120
-            HStack(spacing: 0) {
-                DownloadSidebar(model: downloads, compact: compactNav) { AgentStatusView() }
-                    .frame(width: compactNav ? RocketSize.sidebarRail : RocketSize.sidebarWidth)
-                DownloadListView(model: downloads)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if inlineInspector, let id = downloads.detailsID {
-                    DownloadDetailView(model: downloads, id: id, layout: .inspector)
-                        .frame(width: min(RocketSize.inspectorWidth, max(280, width * 0.32)))
-                        .background(RocketColor.canvas)
-                        .overlay(alignment: .leading) { Rectangle().fill(RocketColor.border).frame(width: 1) }
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
-            }
-            .frame(width: width, height: proxy.size.height)
-            .overlay {
-                if downloads.detailsID != nil, !inlineInspector, let id = downloads.detailsID {
-                    HStack(spacing: 0) {
-                        Color.black.opacity(0.28)
-                            .contentShape(Rectangle())
-                            .onTapGesture { downloads.detailsID = nil }
-                        DownloadDetailView(model: downloads, id: id, layout: .inspector)
-                            .frame(width: min(RocketSize.inspectorWidth, max(260, width - RocketSize.sidebarRail - 16)))
-                            .background(RocketColor.canvas)
-                            .overlay(alignment: .leading) { Rectangle().fill(RocketColor.border).frame(width: 1) }
-                    }
-                    .transition(.opacity)
-                }
-            }
-            .rocketAnimation(RocketMotion.standard, value: downloads.detailsID)
-            .rocketAnimation(RocketMotion.standard, value: inlineInspector)
+        NavigationSplitView {
+            DownloadSidebar(model: downloads) { AgentStatusView() }
+                .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 300)
+        } detail: {
+            DownloadListView(model: downloads)
         }
-        .ignoresSafeArea(.container, edges: .top)
-        .background(RocketColor.canvas)
-        .rocketWindowChrome(color: RocketColor.sidebar)
-        .tint(RocketColor.accent)
         .dropDestination(for: URL.self) { urls, _ in
             let links = LinkExtractor.urls(fromDropped: urls)
             guard !links.isEmpty else { return false }
@@ -68,7 +35,7 @@ struct MainWindow: View {
                 }
             }
         }
-        .rocketModal(isPresented: Binding(get: { downloads.showInsights }, set: { downloads.showInsights = $0 })) {
+        .rocketModal(isPresented: $downloads.showInsights) {
             DownloadInsightsView(model: downloads)
         }
         .rocketAlert($downloads.alert)
@@ -76,16 +43,5 @@ struct MainWindow: View {
             if message != nil { soundEffects?.playWarning() }
         }
         .rocketCommandPalette(downloads: downloads)
-        .background { commandPaletteShortcut }
-    }
-
-    @ViewBuilder
-    private var commandPaletteShortcut: some View {
-        if downloads.adding == nil, downloads.detailsID == nil, downloads.refreshing == nil,
-           downloads.editingQueue == nil, !downloads.isCommandPaletteOpen {
-            Button("Command Palette") { downloads.isCommandPaletteOpen = true }
-                .keyboardShortcut("k", modifiers: .command)
-                .hidden()
-        }
     }
 }

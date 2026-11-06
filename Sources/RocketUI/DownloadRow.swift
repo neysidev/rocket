@@ -3,170 +3,10 @@ import QuickLookThumbnailing
 import RocketCore
 import RocketDesign
 import SwiftUI
-
-/// Which table columns fit the list's current width. Name and the checkbox are always shown.
-struct DownloadTableColumns: Equatable {
-    var status = false
-    var size = false
-    var progress = false
-    var speed = false
-    var date = false
-    var actions = false
-
-    static let check: CGFloat = 44
-    static let statusWidth: CGFloat = 116
-    static let sizeWidth: CGFloat = 88
-    static let progressWidth: CGFloat = 148
-    static let speedWidth: CGFloat = 84
-    static let dateWidth: CGFloat = 72
-    static let actionsWidth: CGFloat = 76
-
-    init(width: CGFloat) {
-        var used = Self.check + 148
-        func take(_ column: CGFloat, _ enabled: inout Bool) {
-            guard used + column <= width - 4 else { return }
-            used += column
-            enabled = true
-        }
-        take(Self.statusWidth, &status)
-        take(Self.progressWidth, &progress)
-        take(Self.actionsWidth, &actions)
-        take(Self.sizeWidth, &size)
-        take(Self.speedWidth, &speed)
-        take(Self.dateWidth, &date)
-    }
-}
-
-/// One table row. The checkbox, the name, and the action buttons are separate hit targets.
-struct DownloadRow: View {
-    let item: DownloadItem
-    let model: DownloadsModel
-    var queuePosition: Int?
-    var isSelected = false
-    var isInspected = false
-    var columns = DownloadTableColumns(width: 10_000)
-    var onOpen: () -> Void = {}
-    var onToggle: () -> Void = {}
-    var onExtend: () -> Void = {}
-    @State private var hovering = false
-
-    private var download: Download { item.download }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            MacCheckbox(
-                state: isSelected ? .on : .off,
-                label: String(localized: "Select \(download.fileName)")
-            ) {
-                if NSEvent.modifierFlags.contains(.shift) { onExtend() } else { onToggle() }
-            }
-            .frame(width: DownloadTableColumns.check, height: RocketSize.tableRow)
-
-            Button(action: activate) {
-                HStack(spacing: 0) {
-                    HStack(spacing: 10) {
-                        FileThumbnail(item: item, size: RocketSize.fileTileRow)
-                        Text(download.fileName)
-                            .font(.rocketHeadline)
-                            .foregroundStyle(RocketColor.textPrimary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.trailing, RocketSpace.s3)
-
-                    if columns.status {
-                        StatusLabel(item: item, queuePosition: queuePosition, showsDetail: false, titleOnly: true)
-                            .frame(width: DownloadTableColumns.statusWidth, alignment: .leading)
-                    }
-                    if columns.size {
-                        Text(shortSize)
-                            .font(.rocketLabel)
-                            .foregroundStyle(RocketColor.textSecondary)
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .frame(width: DownloadTableColumns.sizeWidth, alignment: .trailing)
-                            .padding(.trailing, RocketSpace.s3)
-                    }
-                    if columns.progress {
-                        ProgressCell(item: item)
-                            .frame(width: DownloadTableColumns.progressWidth, alignment: .leading)
-                            .padding(.trailing, RocketSpace.s3)
-                    }
-                    if columns.speed {
-                        Text(speedText)
-                            .font(.rocketLabel)
-                            .foregroundStyle(download.state.isTransferring ? RocketColor.accentText : RocketColor.textTertiary)
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .frame(width: DownloadTableColumns.speedWidth, alignment: .trailing)
-                            .padding(.trailing, RocketSpace.s3)
-                    }
-                    if columns.date {
-                        Text(download.completedAt ?? download.createdAt, format: .dateTime.month(.abbreviated).day())
-                            .font(.rocketCaption)
-                            .foregroundStyle(RocketColor.textTertiary)
-                            .monospacedDigit()
-                            .frame(width: DownloadTableColumns.dateWidth, alignment: .trailing)
-                            .padding(.trailing, RocketSpace.s2)
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(item.accessibilityLabel)
-
-            if columns.actions {
-                RowActions(item: item, model: model, fixed: true)
-                    .frame(width: DownloadTableColumns.actionsWidth, alignment: .trailing)
-                    .padding(.trailing, RocketSpace.s2)
-            }
-        }
-        .frame(height: RocketSize.tableRow)
-        .background(isSelected ? RocketColor.selected : hovering ? RocketColor.hover : .clear)
-        .overlay(alignment: .leading) {
-            if isInspected { Rectangle().fill(RocketColor.accent).frame(width: 2) }
-        }
-        .overlay(alignment: .bottom) { Rectangle().fill(RocketColor.border).frame(height: 1) }
-        .onHover { hovering = $0 }
-        .rocketAnimation(RocketMotion.fast, value: hovering)
-        .rocketAnimation(RocketMotion.fast, value: isSelected)
-        .rocketAnimation(RocketMotion.fast, value: isInspected)
-        .accessibilityActions {
-            ForEach(RowAction.available(for: download), id: \.self) { action in
-                Button(action.title) { action.perform(on: download, model: model) }
-            }
-        }
-    }
-
-    /// Total size when known. Progress already shows how much has arrived.
-    private var shortSize: String {
-        if let total = download.totalBytes { return Format.bytes(total) }
-        if download.receivedBytes > 0 { return Format.bytes(download.receivedBytes) }
-        return "—"
-    }
-
-    private var speedText: String {
-        if download.state.isTransferring, item.speed > 0 { return Format.speed(item.speed) }
-        if download.state == .paused { return String(localized: "Paused") }
-        return "—"
-    }
-
-    private func activate() {
-        let clicks = NSApp.currentEvent?.clickCount ?? 1
-        if clicks >= 2, download.state == .completed {
-            model.open(download.id)
-            return
-        }
-        let flags = NSEvent.modifierFlags
-        if flags.contains(.command) { onToggle() }
-        else if flags.contains(.shift) { onExtend() }
-        else { onOpen() }
-    }
-}
+import UniformTypeIdentifiers
 
 /// Percent and a thin bar. Completed rows settle on a full track.
-private struct ProgressCell: View {
+struct ProgressCell: View {
     let item: DownloadItem
     @State private var completionFlash = false
 
@@ -176,8 +16,8 @@ private struct ProgressCell: View {
         HStack(spacing: 8) {
             RocketProgressBar(
                 fraction: completionFlash || download.state == .completed ? 1 : item.fraction,
-                tint: completionFlash ? RocketColor.success : download.state == .paused ? RocketColor.textTertiary : download.state == .completed ? RocketColor.success.opacity(0.55) : RocketColor.accent,
-                height: RocketSize.progressBarRow
+                tint: completionFlash || download.state == .completed ? RocketColor.success
+                    : download.state == .paused ? RocketColor.textTertiary : RocketColor.accent
             )
             Text(percent)
                 .font(.rocketCaption)
@@ -202,116 +42,31 @@ private struct ProgressCell: View {
     }
 }
 
-/// Grid card. Checkbox and actions sit outside the button that opens details.
-struct DownloadCard: View {
-    let item: DownloadItem
-    let model: DownloadsModel
-    var queuePosition: Int?
-    var isSelected = false
-    var isInspected = false
-    var onOpen: () -> Void = {}
-    var onToggle: () -> Void = {}
-    var onExtend: () -> Void = {}
-    @State private var hovering = false
-
-    private var download: Download { item.download }
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous)
-        VStack(alignment: .leading, spacing: RocketSpace.s4) {
-            HStack(alignment: .center, spacing: RocketSpace.s3) {
-                MacCheckbox(state: isSelected ? .on : .off, label: String(localized: "Select \(download.fileName)")) {
-                    if NSEvent.modifierFlags.contains(.shift) { onExtend() } else { onToggle() }
-                }
-                .frame(width: 16, height: 16)
-                FileThumbnail(item: item, size: RocketSize.fileTileCard)
-                Spacer(minLength: 0)
-                RowActions(item: item, model: model, fixed: true)
-            }
-            Button(action: activate) {
-                VStack(alignment: .leading, spacing: RocketSpace.s4) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(download.fileName)
-                            .font(.rocketHeadline)
-                            .foregroundStyle(RocketColor.textPrimary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .rocketTooltip(download.fileName)
-                        StatusLabel(item: item, queuePosition: queuePosition, showsDetail: false, titleOnly: true)
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        RocketProgressBar(
-                            fraction: download.state == .completed ? 1 : item.fraction,
-                            tint: download.state.isTransferring ? RocketColor.accent
-                                : download.state == .completed ? RocketColor.success.opacity(0.5) : RocketColor.textTertiary
-                        )
-                        HStack {
-                            Text(Format.size(item))
-                                .font(.rocketCaption)
-                                .foregroundStyle(RocketColor.textSecondary)
-                                .monospacedDigit()
-                                .lineLimit(1)
-                            Spacer(minLength: RocketSpace.s2)
-                            if download.state.isTransferring { LiveMetrics(item: item, speedOnly: true) }
-                        }
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(item.accessibilityLabel)
-        }
-        .padding(RocketSpace.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isSelected ? RocketColor.selected : RocketColor.raised, in: shape)
-        .overlay(shape.strokeBorder(isInspected ? RocketColor.accent.opacity(0.8) : hovering ? RocketColor.borderStrong : RocketColor.border))
-        .onHover { hovering = $0 }
-        .rocketAnimation(RocketMotion.fast, value: hovering)
-        .rocketAnimation(RocketMotion.fast, value: isSelected)
-        .accessibilityActions {
-            ForEach(RowAction.available(for: download), id: \.self) { action in
-                Button(action.title) { action.perform(on: download, model: model) }
-            }
-        }
-    }
-
-    private func activate() {
-        let clicks = NSApp.currentEvent?.clickCount ?? 1
-        if clicks >= 2, download.state == .completed {
-            model.open(download.id)
-            return
-        }
-        let flags = NSEvent.modifierFlags
-        if flags.contains(.command) { onToggle() }
-        else if flags.contains(.shift) { onExtend() }
-        else { onOpen() }
-    }
-}
-
-/// Quick Look thumbnail for finished images, videos and documents; the type tile otherwise or until it loads.
+/// Quick Look thumbnail for finished images, videos and documents; the Finder icon for the file type otherwise.
 struct FileThumbnail: View {
     let item: DownloadItem
     let size: CGFloat
     @State private var image: NSImage?
 
     var body: some View {
-        Group {
-            if let image {
-                let shape = RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: size, height: size)
-                    .clipShape(shape)
-                    .overlay(shape.strokeBorder(RocketColor.border))
-                    .accessibilityHidden(true)
-                    .transition(.opacity)
-            } else {
-                FileTile(symbol: item.category.symbol, size: size)
-            }
-        }
-        .animation(RocketMotion.enter, value: image != nil)
-        .task(id: url) { image = await Self.thumbnail(for: url, size: size) }
+        Image(nsImage: image ?? Self.typeIcon(item.download.fileName))
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+            .task(id: url) { image = await Self.thumbnail(for: url, size: size) }
+    }
+
+    @MainActor private static var typeIcons: [String: NSImage] = [:]
+
+    /// Finder's icon for the extension, one per extension.
+    @MainActor
+    static func typeIcon(_ fileName: String) -> NSImage {
+        let ext = (fileName as NSString).pathExtension.lowercased()
+        if let icon = typeIcons[ext] { return icon }
+        let icon = NSWorkspace.shared.icon(for: UTType(filenameExtension: ext) ?? .data)
+        typeIcons[ext] = icon
+        return icon
     }
 
     private var url: URL? {
@@ -332,35 +87,6 @@ struct FileThumbnail: View {
         guard let image = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage else { return nil }
         cache.setObject(image, forKey: url as NSURL)
         return image
-    }
-}
-
-/// "68% · 24 MB/s" while transferring, "Paused · 31%" when paused.
-private struct LiveMetrics: View {
-    let item: DownloadItem
-    var speedOnly = false
-
-    var body: some View {
-        Text(text)
-            .font(.rocketLabel)
-            .monospacedDigit()
-            .foregroundStyle(item.download.state == .paused ? RocketColor.textSecondary : RocketColor.accentText)
-            .lineLimit(1)
-            .fixedSize()
-            .contentTransition(.numericText())
-            .animation(RocketMotion.progress, value: text)
-    }
-
-    private var text: String {
-        switch item.download.state {
-        case .probing: return String(localized: "Starting…")
-        case .verifying: return String(localized: "Verifying…")
-        default:
-            var parts: [String] = []
-            if !speedOnly, let fraction = item.fraction { parts.append(fraction.formatted(.percent.precision(.fractionLength(0)))) }
-            if item.speed > 0 { parts.append(Format.speed(item.speed)) }
-            return parts.isEmpty ? item.download.state.title : parts.joined(separator: " · ")
-        }
     }
 }
 
@@ -403,58 +129,6 @@ struct StatusLabel: View {
         case .failed: return download.failure?.userMessage
         default: return showsDetail ? Format.size(item) : nil
         }
-    }
-}
-
-/// Hover buttons for the row's state, then a more menu with the full command set.
-private struct RowActions: View {
-    let item: DownloadItem
-    let model: DownloadsModel
-    /// One primary action plus the menu, so every row's controls line up.
-    var fixed = false
-
-    private var download: Download { item.download }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            if download.state == .queued, model.queues.count > 1, !fixed {
-                RocketMenuButton(alignment: .trailing) {
-                    [RocketMenuSection(String(localized: "Move to queue"), items: DownloadMenu.queueItems(ids: [download.id], model: model))]
-                } label: {
-                    RocketIcon(.swap, size: 14)
-                }
-                .buttonStyle(.rocketIcon)
-                .accessibilityLabel(String(localized: "Move to Queue"))
-                .rocketTooltip(String(localized: "Move to Queue"))
-            }
-            if let primary {
-                Button { primary.perform(on: download, model: model) } label: {
-                    RocketIcon(symbol: primary.symbol, size: 14)
-                }
-                .buttonStyle(IconButtonStyle(role: primary == .cancel ? .destructive : nil))
-                .accessibilityLabel(primary.title)
-                .rocketTooltip(primary.title)
-            }
-            RocketMenuButton(alignment: .trailing) {
-                DownloadMenu.sections(ids: menuIDs, model: model)
-            } label: {
-                RocketIcon(.ellipsis, size: 14)
-            }
-            .buttonStyle(.rocketIcon)
-            .accessibilityLabel(String(localized: "More"))
-            .rocketTooltip(String(localized: "More"))
-        }
-    }
-
-    /// The action a person is most likely to take for this state. The rest live in the menu.
-    private var primary: RowAction? {
-        let skip: Set<RowAction> = [.remove, .details, .viewError]
-        return RowAction.available(for: download).first { !skip.contains($0) }
-    }
-
-    /// The menu acts on the whole selection when this item is part of it.
-    private var menuIDs: Set<UUID> {
-        model.selection.contains(download.id) ? model.selection : [download.id]
     }
 }
 
@@ -609,7 +283,8 @@ extension DownloadState {
         case .probing, .downloading, .verifying: RocketColor.accentText
         case .completed: RocketColor.success
         case .failed: RocketColor.danger
-        case .queued, .paused: RocketColor.textSecondary
+        case .paused: RocketColor.warning
+        case .queued: RocketColor.textSecondary
         case .cancelled: RocketColor.textTertiary
         }
     }

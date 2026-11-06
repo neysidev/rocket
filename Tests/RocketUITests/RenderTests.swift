@@ -27,11 +27,15 @@ import Testing
 
     @Test(arguments: [NSAppearance.Name.aqua, .darkAqua])
     func rowsRender(appearance: NSAppearance.Name) throws {
-        let model = DownloadsModel()
         let view = VStack(spacing: 0) {
             ForEach(Self.items) { item in
-                DownloadRow(item: item, model: model)
-                    .padding(.horizontal, RocketSpace.s4)
+                HStack {
+                    FileThumbnail(item: item, size: 16)
+                    Text(item.download.fileName).frame(maxWidth: .infinity, alignment: .leading)
+                    StatusLabel(item: item, showsDetail: false)
+                    ProgressCell(item: item).frame(width: 150)
+                }
+                .padding(.horizontal, RocketSpace.s4)
                     .padding(.vertical, RocketSpace.s3)
             }
         }
@@ -47,28 +51,6 @@ import Testing
         #expect(rendered.width == 1280)
 
         try RenderExport.writePNG(rendered, named: "rows-\(appearance.rawValue).png")
-    }
-
-    @Test func gridCardsRender() throws {
-        let model = DownloadsModel()
-        let view = LazyVGrid(columns: Array(repeating: GridItem(.fixed(220), spacing: RocketSpace.s4), count: 3), spacing: RocketSpace.s4) {
-            ForEach(Self.items) { item in
-                DownloadCard(item: item, model: model, queuePosition: item.download.state == .queued ? 2 : nil,
-                             isSelected: item.download.state == .completed)
-            }
-        }
-        .padding(RocketSpace.s5)
-        .background(RocketColor.canvas)
-        .environment(\.colorScheme, .dark)
-
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 2
-        var image: CGImage?
-        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { image = renderer.cgImage }
-        let rendered = try #require(image)
-        #expect(rendered.width > 0)
-
-        try RenderExport.writePNG(rendered, named: "cards.png")
     }
 
     @Test func addSheetRenders() async throws {

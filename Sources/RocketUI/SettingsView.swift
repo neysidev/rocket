@@ -81,7 +81,7 @@ public final class AppSettings {
     }
 }
 
-/// Settings window: a sidebar of sections, each a scrolling page of Rocket form sections.
+/// Settings window: standard toolbar tabs, each a grouped form like System Settings.
 public struct SettingsView: View {
     let model: DownloadsModel
     /// App-provided sections (the Sparkle updater lives in the app target, TRD: one module per package).
@@ -117,30 +117,10 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 1) {
-                Color.clear.frame(height: 40).rocketWindowDragArea()
-                Text("Settings").rocketEyebrow().padding(.leading, RocketSpace.s3).padding(.bottom, RocketSpace.s3)
-                ForEach(Page.allCases, id: \.self) { page in
-                    SidebarRow(title: page.title, symbol: page.symbol, count: 0, isSelected: self.page == page) {
-                        withAnimation(RocketMotion.standard) { self.page = page }
-                    }
-                }
-                Spacer()
-            }
-            .padding(.horizontal, RocketSpace.s3)
-            .frame(width: 200)
-            .rocketSidebarBackground()
-            .overlay(alignment: .trailing) { Rectangle().fill(RocketColor.border).frame(width: 1) }
-
-            VStack(alignment: .leading, spacing: 0) {
-                Text(page.title)
-                    .font(.rocketTitle)
-                    .foregroundStyle(RocketColor.textPrimary)
-                    .padding(.horizontal, RocketSpace.s7)
-                    .frame(maxWidth: .infinity, minHeight: RocketSize.headerHeight, alignment: .leading)
-                    .rocketWindowDragArea()
-                ScrollView {
+        // Native preferences window: toolbar tabs, standard title bar titled after the selected tab.
+        TabView(selection: $page) {
+            ForEach(Page.allCases, id: \.self) { page in
+                Form {
                     Group {
                         switch page {
                         case .general:
@@ -153,18 +133,13 @@ public struct SettingsView: View {
                             RulesSettings(model: model, editing: $editingRule)
                         }
                     }
-                    .id(page)
-                    .rocketTransition(RocketTransition.content)
-                    .rocketAnimation(RocketMotion.standard, value: page)
-                    .padding(.horizontal, RocketSpace.s7)
-                    .padding(.bottom, RocketSpace.s7)
                 }
+                .formStyle(.grouped)
+                .tabItem { Label(page.title, systemImage: page.symbol) }
+                .tag(page)
             }
-            .background(RocketColor.canvas)
         }
-        .frame(width: 760, height: 580)
-        .ignoresSafeArea()
-        .rocketWindowChrome(color: RocketColor.sidebar)
+        .frame(width: 600, height: 540)
         .rocketModal(item: $editingRule) { rule in
             RuleEditor(rule: rule, queues: model.queues) { saved in Task { await model.saveRule(saved) } }
         }
@@ -180,20 +155,16 @@ struct GeneralSettings: View {
     @State private var choosingFolder = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: RocketSpace.s6) {
+        Group {
             RocketFormSection(String(localized: "Downloads"),
                               footer: String(localized: "More connections are faster on servers that allow them. Rocket lowers the count automatically when a server pushes back.")) {
                 RocketFormRow(String(localized: "Save to")) {
-                    Button {
-                        choosingFolder = true
-                    } label: {
-                        HStack(spacing: RocketSpace.s2 + 2) {
-                            RocketIcon(.folder, size: 14).foregroundStyle(RocketColor.textSecondary)
-                            Text(settings.folder.lastPathComponent)
-                        }
+                    HStack {
+                        Label(settings.folder.lastPathComponent, systemImage: "folder")
+                            .foregroundStyle(.secondary)
+                            .help(settings.folder.path)
+                        Button("Choose…") { choosingFolder = true }
                     }
-                    .buttonStyle(RocketButtonStyle(.secondary, size: .small))
-                    .rocketTooltip(settings.folder.path)
                 }
                 RocketFormRow(String(localized: "Connections per download")) {
                     RocketSelect(String(localized: "Connections per download"), selection: $settings.connections,
@@ -251,7 +222,7 @@ struct NetworkSettings: View {
     @Bindable var settings: AppSettings
 
     var body: some View {
-        VStack(alignment: .leading, spacing: RocketSpace.s6) {
+        Group {
             RocketFormSection(String(localized: "Proxy"),
                               footer: settings.proxy.kind != .system && !settings.proxy.isCustom
                                   ? String(localized: "Enter a server and a port from 1 to 65535. Until then Rocket uses the system settings.") : nil) {

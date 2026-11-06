@@ -22,7 +22,7 @@ struct RocketApp: App {
                     NSApp.activate()
                 }
         }
-        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified)
         .commands {
             DownloadCommands(downloads: app.downloads)
             UpdateCommands(updater: app.updater)
@@ -118,13 +118,15 @@ struct DownloadCommands: Commands {
         CommandGroup(replacing: .textEditing) {
             Button("Command Palette…") { downloads.isCommandPaletteOpen = true }
                 .keyboardShortcut("k", modifiers: .command)
-            Button("Search Downloads") { downloads.isSearching = true }
+            Button("Find") { downloads.isSearching = true }
                 .keyboardShortcut("f")
         }
         CommandMenu("Download") {
-            Button("Show Details") { downloads.selection.first.map(downloads.showDetails) }
-                .keyboardShortcut("i")
-                .disabled(downloads.selection.count != 1)
+            Button(downloads.detailsID == nil ? "Show Inspector" : "Hide Inspector") {
+                if downloads.detailsID == nil { downloads.selection.first.map(downloads.showDetails) } else { downloads.detailsID = nil }
+            }
+            .keyboardShortcut("i")
+            .disabled(downloads.detailsID == nil && downloads.selection.count != 1)
             Button("Show in Finder") { downloads.reveal(downloads.selection) }
                 .keyboardShortcut("o")
                 .disabled(downloads.selection.isEmpty)
@@ -138,11 +140,9 @@ struct DownloadCommands: Commands {
                 .keyboardShortcut("k", modifiers: [.command, .shift])
                 .disabled(!downloads.hasFinished)
         }
-        CommandGroup(after: .toolbar) {
-            Button("as List") { downloads.viewMode = .list }
-                .keyboardShortcut("1")
-            Button("as Grid") { downloads.viewMode = .grid }
-                .keyboardShortcut("2")
+        CommandGroup(before: .toolbar) {
+            Button("Download Insights") { downloads.showInsights = true }
+                .keyboardShortcut("i", modifiers: [.command, .option])
             Divider()
             Picker("Sort By", selection: Binding(get: { downloads.sort }, set: { downloads.sort = $0 })) {
                 ForEach(DownloadSort.allCases) { Text($0.title).tag($0) }

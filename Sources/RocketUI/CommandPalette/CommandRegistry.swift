@@ -9,7 +9,6 @@ enum CommandPaletteGroup: String, CaseIterable, Sendable {
     case selection
     case navigation
     case actions
-    case view
 
     var title: String {
         switch self {
@@ -18,7 +17,6 @@ enum CommandPaletteGroup: String, CaseIterable, Sendable {
         case .selection: String(localized: "Selection")
         case .navigation: String(localized: "Go to")
         case .actions: String(localized: "Actions")
-        case .view: String(localized: "View")
         }
     }
 
@@ -29,7 +27,6 @@ enum CommandPaletteGroup: String, CaseIterable, Sendable {
         case .selection: 2
         case .navigation: 3
         case .actions: 4
-        case .view: 5
         }
     }
 }
@@ -85,7 +82,6 @@ enum CommandRegistry {
         items += navigationItems(model: model, query: trimmed)
         items += selectionItems(model: model, query: trimmed)
         items += actionItems(model: model, query: trimmed)
-        items += viewItems(model: model, query: trimmed)
 
         if trimmed.isEmpty {
             return dedupe(items).sorted {
@@ -440,38 +436,8 @@ enum CommandRegistry {
         ]
     }
 
-    private static func viewItems(model: DownloadsModel, query: String) -> [CommandPaletteItem] {
-        [
-            CommandPaletteItem(
-                id: "view:list",
-                title: String(localized: "View as List"),
-                symbol: "list.bullet",
-                group: .view,
-                shortcut: "⌘1",
-                priority: model.viewMode == .list ? 1 : 0
-            ) {
-                record("view:list")
-                model.viewMode = .list
-                model.isCommandPaletteOpen = false
-            },
-            CommandPaletteItem(
-                id: "view:grid",
-                title: String(localized: "View as Grid"),
-                symbol: "square.grid.2x2",
-                group: .view,
-                shortcut: "⌘2",
-                priority: model.viewMode == .grid ? 1 : 0
-            ) {
-                record("view:grid")
-                model.viewMode = .grid
-                model.isCommandPaletteOpen = false
-            },
-        ]
-    }
-
     private static func staticCommand(id: String, model: DownloadsModel, group: CommandPaletteGroup, priority: Int) -> CommandPaletteItem? {
-        let all = navigationItems(model: model, query: "") + actionItems(model: model, query: "") + viewItems(model: model, query: "")
-            + selectionItems(model: model, query: "")
+        let all = navigationItems(model: model, query: "") + actionItems(model: model, query: "") + selectionItems(model: model, query: "")
         guard let item = all.first(where: { $0.id == id }) else { return nil }
         return CommandPaletteItem(
             id: item.id, title: item.title, subtitle: item.subtitle, symbol: item.symbol, group: group,

@@ -66,15 +66,6 @@ public enum DownloadSort: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Main window layout; persisted across launches.
-public enum DownloadViewMode: String, CaseIterable, Identifiable, Sendable {
-    case list, grid
-
-    public var id: Self { self }
-    public var title: String { self == .list ? String(localized: "List") : String(localized: "Grid") }
-    public var symbol: String { self == .list ? "list.bullet" : "square.grid.2x2" }
-}
-
 /// File size refinement shown as a removable chip.
 public enum SizeFilter: String, CaseIterable, Identifiable, Sendable {
     case any, small, medium, large, huge
@@ -180,7 +171,7 @@ public final class DownloadsModel {
     public internal(set) var rules: [DownloadRule] = []
     /// Per-download speed samples for the last 60 s (5 Hz), for the detail view's chart.
     public private(set) var speedSamples: [UUID: [Double]] = [:]
-    /// Download open in the inspector. Independent of checkbox selection.
+    /// Download open in the inspector; follows the selection while open.
     public var detailsID: UUID?
     /// The toolbar search field is expanded (⌘F).
     public var isSearching = false
@@ -202,9 +193,6 @@ public final class DownloadsModel {
     public var dateFilter: DateFilter = .any
     /// Download insights sheet (statistics and throughput).
     public var showInsights = false
-    public var viewMode: DownloadViewMode = DownloadViewMode(rawValue: UserDefaults.standard.string(forKey: "viewMode") ?? "") ?? .list {
-        didSet { UserDefaults.standard.set(viewMode.rawValue, forKey: "viewMode") }
-    }
     /// Called after each snapshot that changed something (Dock tile).
     public var onUpdate: (@MainActor () -> Void)?
     public var selection: Set<UUID> = []

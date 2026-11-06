@@ -31,8 +31,7 @@ struct AgentStatusView: View {
             }
         }
         .padding(RocketSpace.s3)
-        .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous).strokeBorder(color.opacity(0.3)))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Agent \(word). \(detail)")
     }

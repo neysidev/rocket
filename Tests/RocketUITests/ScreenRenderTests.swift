@@ -48,20 +48,17 @@ import Testing
     }
 
     static func main(_ model: DownloadsModel) -> some View {
-        HStack(spacing: 0) {
-            DownloadSidebar(model: model) { EmptyView() }.frame(width: RocketSize.sidebarWidth)
+        NavigationSplitView {
+            DownloadSidebar(model: model) { EmptyView() }
+        } detail: {
             DownloadListView(model: model)
         }
-        .background(RocketColor.canvas)
     }
 
     @Test(arguments: [NSAppearance.Name.aqua, .darkAqua])
     func mainWindowRenders(appearance: NSAppearance.Name) async throws {
         let model = Self.model()
         try await Self.snapshot(Self.main(model), size: CGSize(width: 1080, height: 640), name: "main-list", appearance: appearance)
-        model.viewMode = .grid
-        try await Self.snapshot(Self.main(model), size: CGSize(width: 1080, height: 640), name: "main-grid", appearance: appearance)
-        model.viewMode = .list
         model.filter = .failed
         model.search = "nothing"
         try await Self.snapshot(Self.main(model), size: CGSize(width: 900, height: 480), name: "main-empty", appearance: appearance)
@@ -71,15 +68,15 @@ import Testing
     func dialogsRender(appearance: NSAppearance.Name) async throws {
         let model = Self.model()
         let id = model.items[0].id
-        let detail = DownloadDetailView(model: model, id: id).frame(width: 540).rocketFloating(radius: RocketRadius.modal)
+        let detail = DownloadDetailView(model: model, id: id).frame(width: 540)
         try await Self.snapshot(detail.padding(30).background(RocketColor.canvas), size: CGSize(width: 600, height: 660), name: "details", appearance: appearance)
 
-        let queue = QueueEditor(queue: model.queues[1]) { _ in }.rocketFloating(radius: RocketRadius.modal)
+        let queue = QueueEditor(queue: model.queues[1]) { _ in }
         try await Self.snapshot(queue.padding(30).background(RocketColor.canvas), size: CGSize(width: 540, height: 640), name: "queue-editor", appearance: appearance)
 
         let adding = AddDownloadsModel(text: "https://releases.example.com/ubuntu-24.04-desktop-amd64.iso",
                                        folder: URL(filePath: "/Users/me/Downloads", directoryHint: .isDirectory), agent: ProbingAgent(), existing: [])
-        let add = AddDownloadsSheet(model: adding) { _ in }.rocketFloating(radius: RocketRadius.modal)
+        let add = AddDownloadsSheet(model: adding) { _ in }
         try await Self.snapshot(add.padding(30).background(RocketColor.canvas), size: CGSize(width: 680, height: 420), name: "add-input", appearance: appearance)
 
         let review = AddDownloadsModel(
@@ -89,10 +86,10 @@ import Testing
             fileExists: { $0.lastPathComponent == "paper.pdf" }
         )
         await review.review()
-        let reviewSheet = AddDownloadsSheet(model: review) { _ in }.rocketFloating(radius: RocketRadius.modal)
+        let reviewSheet = AddDownloadsSheet(model: review) { _ in }
         try await Self.snapshot(reviewSheet.padding(30).background(RocketColor.canvas), size: CGSize(width: 680, height: 560), name: "add-review", appearance: appearance)
 
-        let menu = RocketMenuContent(sections: DownloadMenu.sections(ids: [model.items[3].id], model: model))
+        let menu = Menu("Actions") { RocketNativeMenuItems(sections: DownloadMenu.sections(ids: [model.items[3].id], model: model)) }.fixedSize()
         try await Self.snapshot(menu.padding(30).background(RocketColor.canvas), size: CGSize(width: 320, height: 420), name: "menu", appearance: appearance)
 
         let alert = Color.clear.rocketAlert(.constant("The disk is full. Free up space and resume the download."))
@@ -103,15 +100,15 @@ import Testing
     func settingsRender(appearance: NSAppearance.Name) async throws {
         let model = Self.model()
         try await Self.snapshot(SettingsView(model: model), size: CGSize(width: 760, height: 580), name: "settings-general", appearance: appearance)
-        let pages = VStack(alignment: .leading, spacing: 24) {
+        let pages = Form {
             NetworkSettings(settings: model.settings)
             RulesSettings(model: model, editing: .constant(nil))
         }
-        .padding(32)
+        .formStyle(.grouped)
         .frame(width: 560)
         .background(RocketColor.canvas)
         try await Self.snapshot(pages, size: CGSize(width: 560, height: 600), name: "settings-pages", appearance: appearance)
-        let editor = RuleEditor(rule: model.rules[0], queues: model.queues) { _ in }.rocketFloating(radius: RocketRadius.modal)
+        let editor = RuleEditor(rule: model.rules[0], queues: model.queues) { _ in }
         try await Self.snapshot(editor.padding(30).background(RocketColor.canvas), size: CGSize(width: 560, height: 580), name: "rule-editor", appearance: appearance)
     }
 }

@@ -4,73 +4,32 @@ import RocketCore
 import RocketDesign
 import SwiftUI
 
-/// How the detail view is hosted. The inspector fills the trailing column; the dialog sizes to its content.
-public enum DetailLayout: Sendable { case dialog, inspector }
-
-/// Details for one download: metrics, live segments, speed history, server details, errors and log (FR-APP-02).
+/// Inspector for one download (FR-APP-02): a header bar with Close and icon-only actions, a progress ring with the
+/// numbers that matter, full-width speed chart and connection map while running, then source and destination.
+/// Everything else (URL, ETag, dates, log) sits in collapsed disclosures.
 public struct DownloadDetailView: View {
     let model: DownloadsModel
     let id: UUID
-    var layout: DetailLayout
     @State private var details: DownloadDetails?
-    @Environment(\.rocketDismiss) private var dismiss
+    @State private var showsInfo = false
+    @State private var showsLog = false
 
-    public init(model: DownloadsModel, id: UUID, layout: DetailLayout = .dialog) {
+    public init(model: DownloadsModel, id: UUID) {
         self.model = model
         self.id = id
-        self.layout = layout
     }
 
     private var item: DownloadItem? { model.items.first { $0.id == id } }
 
     public var body: some View {
-        VStack(spacing: 0) {
+        Group {
             if let item {
-                header(item)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: RocketSpace.s6) {
-                        metrics(item)
-                        if let failure = item.download.failure {
-                            HStack(alignment: .firstTextBaseline, spacing: RocketSpace.s3) {
-                                StatusGlyph(.failed, size: 13).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
-                                Text(failure.userMessage)
-                                    .font(.rocketBody)
-                                    .foregroundStyle(RocketColor.textPrimary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .padding(RocketSpace.s4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(item.download.state == .failed ? RocketColor.dangerSoft : RocketColor.control,
-                                        in: RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous))
-                        }
-                        if let segments = details?.segments, !segments.isEmpty, item.download.state != .completed {
-                            section("Connections") {
-                                SegmentsBar(segments: segments, total: item.download.totalBytes, live: item.download.state == .downloading)
-                                Text(connectionText(item))
-                                    .font(.rocketCaption)
-                                    .foregroundStyle(RocketColor.textTertiary)
-                            }
-                        }
-                        if let samples = model.speedSamples[id], samples.contains(where: { $0 > 0 }) {
-                            section("Speed, last minute") { SpeedChart(samples: samples) }
-                        }
-                        section("Details") { info(item.download) }
-                        if let log = details?.log, !log.isEmpty {
-                            section("Log") { LogList(entries: log) }
-                        }
-                    }
-                    .padding(layout == .inspector ? RocketSpace.s5 : RocketSpace.s6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .modifier(DetailScrollSizing(layout: layout))
+                form(item)
             } else {
-                Text("This download was removed.")
-                    .font(.rocketBody)
-                    .foregroundStyle(RocketColor.textSecondary)
-                    .frame(maxWidth: .infinity, minHeight: 200)
+                ContentUnavailableView("Download Removed", systemImage: "tray")
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: layout == .inspector ? .infinity : nil, alignment: .top)
+        .safeAreaInset(edge: .top, spacing: 0) { header }
         .task(id: id) {
             // 2 Hz is plenty for segments and the log; progress numbers come from the list's 5 Hz snapshot.
             while !Task.isCancelled {
@@ -80,128 +39,196 @@ public struct DownloadDetailView: View {
         }
     }
 
-    private func header(_ item: DownloadItem) -> some View {
-        HStack(spacing: RocketSpace.s4) {
-            FileThumbnail(item: item, size: 40)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.download.fileName)
-                    .font(.rocketTitle)
-                    .foregroundStyle(RocketColor.textPrimary)
-                    .lineLimit(2)
+    // MARK: Header
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Button { model.detailsID = nil } label: { Label("Close", systemImage: "xmark") }
+                .keyboardShortcut(.cancelAction)
+                .help("Close Details (Esc)")
+            Spacer()
+            if let download = item?.download {
+                ForEach(actions(for: download), id: \.self) { action in
+                    Button { action.perform(on: download, model: model) } label: { Label(action.title, systemImage: action.symbol) }
+                        .help(action.title)
+                }
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(download.url.absoluteString, forType: .string)
+                } label: { Label("Copy Link", systemImage: "link") }
+                    .help("Copy Link")
+            }
+        }
+        .buttonStyle(.borderless)
+        .labelStyle(.iconOnly)
+        .font(.system(size: 13))
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private func actions(for download: Download) -> [RowAction] {
+        RowAction.available(for: download).filter { ![.details, .viewError, .remove].contains($0) }
+    }
+
+    // MARK: Content
+
+    private func form(_ item: DownloadItem) -> some View {
+        let download = item.download
+        return Form {
+            Section { Summary(item: item) }
+            if download.state == .failed, let failure = download.failure {
+                Section {
+                    Label(failure.userMessage, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let samples = model.speedSamples[id], samples.contains(where: { $0 > 0 }) {
+                Section("Speed") { SpeedChart(samples: samples) }
+            }
+            if let segments = details?.segments, !segments.isEmpty, download.state != .completed {
+                Section("Connections") {
+                    SegmentsBar(segments: segments, total: download.totalBytes, live: download.state == .downloading)
+                    Text(connectionText).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                LabeledContent("Source", value: DownloadSource.host(for: download.url))
+                LabeledContent("Saved to") {
+                    Button(savedFolder(download)) { model.reveal([download.id]) }
+                        .buttonStyle(.link)
+                        .help("Show in Finder")
+                }
+                DisclosureGroup("More Info", isExpanded: $showsInfo) { info(download) }
+                if let log = details?.log, !log.isEmpty {
+                    DisclosureGroup("Activity Log", isExpanded: $showsLog) { LogList(entries: log) }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func savedFolder(_ download: Download) -> String {
+        URL(filePath: download.destinationPath).lastPathComponent
+    }
+
+    private var connectionText: String {
+        let count = details?.segments.count ?? 0
+        guard let details, let limit = details.connectionLimit else { return String(localized: "\(count) segments") }
+        return String(localized: "\(details.activeConnections) of \(limit) connections active · \(count) segments")
+    }
+
+    @ViewBuilder
+    private func info(_ download: Download) -> some View {
+        row("URL", download.url.absoluteString, copyable: true)
+        if let final = download.finalURL, final != download.url { row("Redirected to", final.absoluteString, copyable: true) }
+        row("Path", download.state == .completed ? download.fileURL.path : download.destinationPath)
+        row("Queue", model.queues.first { $0.id == download.queueID }?.name ?? download.queueID)
+        row("Resumable", download.acceptsRanges ? String(localized: "Yes") : String(localized: "No, single connection"))
+        if let limit = download.speedLimit { row("Speed limit", Format.speed(Double(limit))) }
+        if let etag = download.etag { row("ETag", etag) }
+        if let modified = download.lastModified { row("Last modified", modified) }
+        row("Added", download.createdAt.formatted(date: .abbreviated, time: .shortened))
+        if let completed = download.completedAt { row("Completed", completed.formatted(date: .abbreviated, time: .shortened)) }
+    }
+
+    private func row(_ label: LocalizedStringKey, _ value: String, copyable: Bool = false) -> some View {
+        LabeledContent(label) {
+            HStack(spacing: 4) {
+                Text(value)
+                    .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
-                StatusLabel(item: item, showsDetail: false)
-            }
-            Spacer(minLength: RocketSpace.s3)
-            HStack(spacing: RocketSpace.s1) {
-                ForEach(RowAction.available(for: item.download).filter { ![.details, .viewError, .remove].contains($0) }, id: \.self) { action in
-                    Button { action.perform(on: item.download, model: model) } label: {
-                        RocketIcon(symbol: action.symbol, size: 14)
-                    }
-                    .buttonStyle(IconButtonStyle(role: action == .cancel ? .destructive : nil))
-                    .accessibilityLabel(action.title)
-                    .rocketTooltip(action.title)
-                }
-                Rectangle().fill(RocketColor.border).frame(width: 1, height: 16).padding(.horizontal, RocketSpace.s2)
-                RocketIconButton(String(localized: "Close"), icon: .close) { close() }
-            }
-        }
-        .padding(.horizontal, layout == .inspector ? RocketSpace.s5 : RocketSpace.s6)
-        .padding(.vertical, RocketSpace.s5)
-        .onExitCommand { close() }
-        .overlay(alignment: .bottom) { Rectangle().fill(RocketColor.border).frame(height: 1) }
-    }
-
-    private func close() {
-        model.detailsID = nil
-        dismiss()
-    }
-
-    private func metrics(_ item: DownloadItem) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: layout == .inspector ? 120 : 140), spacing: RocketSpace.s3)], spacing: RocketSpace.s3) {
-            metric(Format.bytes(item.download.receivedBytes), caption: item.download.totalBytes.map { "of \(Format.bytes($0))" } ?? "received")
-            if item.download.state == .downloading {
-                let (value, unit) = Format.compactSpeed(item.speed)
-                metric("\(value) \(unit)", caption: item.secondsLeft.map(Format.timeLeft) ?? "speed", live: true)
-            }
-            if let fraction = item.fraction, item.download.state != .completed {
-                metric(fraction.formatted(.percent.precision(.fractionLength(0))), caption: "complete")
-            }
-        }
-    }
-
-    private func metric(_ value: String, caption: String, live: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: RocketSpace.s1) {
-            Text(value)
-                .font(.rocketMetric)
-                .foregroundStyle(live ? RocketColor.accentText : RocketColor.textPrimary)
-                .contentTransition(.numericText())
-            Text(caption).font(.rocketLabel).foregroundStyle(RocketColor.textSecondary)
-        }
-        .padding(RocketSpace.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .rocketCard()
-    }
-
-    private func connectionText(_ item: DownloadItem) -> String {
-        let count = details?.segments.count ?? 0
-        guard let details, details.connectionLimit != nil else { return String(localized: "\(count) segments") }
-        return String(localized: "\(details.activeConnections) of \(details.connectionLimit ?? 0) connections active · \(count) segments")
-    }
-
-    private func info(_ download: Download) -> some View {
-        VStack(spacing: 0) {
-            row("URL", download.url.absoluteString, mono: true, copyable: true)
-            if let final = download.finalURL, final != download.url { row("Redirected to", final.absoluteString, mono: true, copyable: true) }
-            row("Saved to", download.state == .completed ? download.fileURL.path : download.destinationPath, mono: true)
-            row("Queue", model.queues.first { $0.id == download.queueID }?.name ?? download.queueID)
-            row("Resumable", download.acceptsRanges ? String(localized: "Yes") : String(localized: "No, single connection"))
-            if let limit = download.speedLimit { row("Speed limit", Format.speed(Double(limit))) }
-            if let etag = download.etag { row("ETag", etag, mono: true) }
-            if let modified = download.lastModified { row("Last modified", modified) }
-            row("Added", download.createdAt.formatted(date: .abbreviated, time: .shortened))
-            if let completed = download.completedAt { row("Completed", completed.formatted(date: .abbreviated, time: .shortened)) }
-        }
-        .padding(.bottom, -1)
-        .clipShape(RoundedRectangle(cornerRadius: RocketRadius.card, style: .continuous))
-        .rocketCard()
-    }
-
-    private func row(_ label: LocalizedStringKey, _ value: String, mono: Bool = false, copyable: Bool = false) -> some View {
-        HStack(spacing: RocketSpace.s4) {
-            Text(label)
-                .font(.rocketLabel)
-                .foregroundStyle(RocketColor.textSecondary)
-                .frame(width: layout == .inspector ? 88 : 104, alignment: .leading)
-            Text(value)
-                .font(mono ? .rocketMono : .rocketBody)
-                .foregroundStyle(RocketColor.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .rocketTooltip(value)
-            if copyable {
-                RocketIconButton(String(localized: "Copy"), icon: .copy, size: 22) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(value, forType: .string)
+                    .help(value)
+                if copyable {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(value, forType: .string)
+                    } label: { Label("Copy", systemImage: "doc.on.doc") }
+                        .buttonStyle(.borderless)
+                        .labelStyle(.iconOnly)
+                        .help("Copy")
                 }
             }
-        }
-        .padding(.horizontal, RocketSpace.s4)
-        .frame(minHeight: 36)
-        .overlay(alignment: .bottom) { Rectangle().fill(RocketColor.border).frame(height: 1) }
-    }
-
-    private func section<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: RocketSpace.s3) {
-            Text(title).rocketEyebrow()
-            content()
         }
     }
 }
 
-/// One 6 pt track split into per-connection ranges, 1 pt apart; each fills as its connection receives bytes.
+/// Progress ring around the file icon, then name, status, bytes, and live speed with time left.
+private struct Summary: View {
+    let item: DownloadItem
+
+    private var download: Download { item.download }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().stroke(Color(nsColor: .quaternaryLabelColor), lineWidth: 4)
+                Circle()
+                    .trim(from: 0, to: ringFraction)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 0.2), value: ringFraction)
+                FileThumbnail(item: item, size: 30)
+            }
+            .frame(width: 58, height: 58)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(download.fileName)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                HStack(spacing: 4) {
+                    StatusGlyph(download.state.glyph(item.fraction), size: 11)
+                    Text(statusText).foregroundStyle(tint)
+                }
+                .font(.callout)
+                Text(bytesText)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                if download.state == .downloading, item.speed > 0 {
+                    Text([Format.speed(item.speed), item.secondsLeft.map(Format.timeLeft)].compactMap { $0 }.joined(separator: " · "))
+                        .font(.callout)
+                        .foregroundStyle(.tint)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(item.accessibilityLabel)
+    }
+
+    private var ringFraction: Double {
+        download.state == .completed ? 1 : min(1, max(0, item.fraction ?? 0))
+    }
+
+    private var tint: Color {
+        switch download.state {
+        case .completed: RocketColor.success
+        case .failed: RocketColor.danger
+        case .paused, .queued, .cancelled: RocketColor.textSecondary
+        case .probing, .downloading, .verifying: RocketColor.accent
+        }
+    }
+
+    private var statusText: String {
+        guard download.state != .completed, let fraction = item.fraction else { return download.state.title }
+        return "\(download.state.title) · \(fraction.formatted(.percent.precision(.fractionLength(0))))"
+    }
+
+    private var bytesText: String {
+        let received = Format.bytes(download.receivedBytes)
+        guard let total = download.totalBytes else { return received }
+        return download.state == .completed ? Format.bytes(total) : String(localized: "\(received) of \(Format.bytes(total))")
+    }
+}
+
+/// One track split into per-connection ranges, 1 pt apart; each fills as its connection receives bytes.
 struct SegmentsBar: View {
     let segments: [Segment]
     let total: Int64?
@@ -220,43 +247,60 @@ struct SegmentsBar: View {
                         .fill(RocketColor.track)
                         .overlay(alignment: .leading) {
                             Capsule()
-                                .fill(segment.isComplete ? RocketColor.success.opacity(0.6) : live ? RocketColor.accent : RocketColor.textTertiary)
+                                .fill(segment.isComplete ? RocketColor.success : live ? RocketColor.accent : RocketColor.textTertiary)
                                 .frame(width: width * min(1, Double(segment.received) / length))
                         }
                         .frame(width: width)
                 }
             }
         }
-        .frame(height: RocketSize.progressBarDetail)
+        .frame(height: 8)
         .accessibilityElement()
         .accessibilityLabel(String(localized: "\(segments.count) segments, \(segments.count(where: \.isComplete)) finished"))
     }
 }
 
-/// 60-second line in Ember, 1.5 pt, 12 % area fill, no gridlines, one caption for the peak.
+/// Full-width speed over the last minute: area under a line, with current, average and peak below.
 struct SpeedChart: View {
     let samples: [Double]
 
     var body: some View {
         let peak = samples.max() ?? 0
-        VStack(alignment: .leading, spacing: RocketSpace.s1) {
+        let moving = samples.filter { $0 > 0 }
+        let average = moving.isEmpty ? 0 : moving.reduce(0, +) / Double(moving.count)
+        VStack(alignment: .leading, spacing: 8) {
             Chart(Array(samples.enumerated()), id: \.offset) { index, speed in
                 AreaMark(x: .value("Time", index), y: .value("Speed", speed))
-                    .foregroundStyle(RocketColor.accent.opacity(0.12))
+                    .foregroundStyle(.linearGradient(colors: [Color.accentColor.opacity(0.35), Color.accentColor.opacity(0.02)],
+                                                     startPoint: .top, endPoint: .bottom))
+                    .interpolationMethod(.monotone)
                 LineMark(x: .value("Time", index), y: .value("Speed", speed))
-                    .foregroundStyle(RocketColor.accent)
+                    .foregroundStyle(Color.accentColor)
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
+                    .interpolationMethod(.monotone)
             }
             .chartXAxis(.hidden)
             .chartYAxis(.hidden)
-            .chartXScale(domain: 0...299)
-            .frame(height: 64)
-            Text("Peak \(Format.speed(peak))")
-                .font(.rocketCaption)
-                .foregroundStyle(RocketColor.textTertiary)
+            .chartXScale(domain: 0...max(1, samples.count - 1))
+            .frame(maxWidth: .infinity)
+            .frame(height: 90)
+            HStack {
+                stat("Now", samples.last ?? 0)
+                Spacer()
+                stat("Average", average)
+                Spacer()
+                stat("Peak", peak)
+            }
         }
         .accessibilityElement()
         .accessibilityLabel(String(localized: "Speed over the last minute, peak \(Format.speed(peak))"))
+    }
+
+    private func stat(_ title: LocalizedStringKey, _ value: Double) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(Format.speed(value)).font(.callout.weight(.medium)).monospacedDigit()
+        }
     }
 }
 
@@ -264,34 +308,19 @@ struct LogList: View {
     let entries: [LogEntry]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: RocketSpace.s2) {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(entries.suffix(50).reversed().enumerated()), id: \.offset) { _, entry in
-                HStack(alignment: .firstTextBaseline, spacing: RocketSpace.s3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(entry.date, format: .dateTime.hour().minute().second())
-                        .foregroundStyle(RocketColor.textTertiary)
+                        .foregroundStyle(.tertiary)
                     Text(entry.message)
-                        .foregroundStyle(entry.isError ? RocketColor.danger : RocketColor.textSecondary)
+                        .foregroundStyle(entry.isError ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .font(.rocketMono)
-        .padding(RocketSpace.s4)
+        .font(.system(.caption, design: .monospaced))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .rocketCard(fill: RocketColor.control.opacity(0.5))
         .textSelection(.enabled)
-    }
-}
-
-/// The dialog grows with its content up to a cap. The inspector scrolls inside the column.
-private struct DetailScrollSizing: ViewModifier {
-    let layout: DetailLayout
-
-    func body(content: Content) -> some View {
-        if layout == .inspector {
-            content.frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            content.frame(maxHeight: 560).fixedSize(horizontal: false, vertical: true)
-        }
     }
 }
