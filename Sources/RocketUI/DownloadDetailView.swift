@@ -4,15 +4,18 @@ import RocketCore
 import RocketDesign
 import SwiftUI
 
-/// Inspector for one download (FR-APP-02): a header bar with Close and icon-only actions, a progress ring with the
-/// numbers that matter, full-width speed chart and connection map while running, then source and destination.
-/// Everything else (URL, ETag, dates, log) sits in collapsed disclosures.
+/// Inspector for one download (FR-APP-02), adapted to its state:
+/// 1. Download Details — icon, name, status, size and the actions that matter right now (Open / Show in Finder when done).
+/// 2. A state section — live speed and connections while running, progress and resume info when paused, the error and
+///    recovery when failed. Nothing live is shown for finished downloads.
+/// 3. File Information — where it is, where it came from, when.
+/// 4. Technical Details and Activity Log — collapsed by default; their open state is remembered.
 public struct DownloadDetailView: View {
     let model: DownloadsModel
     let id: UUID
     @State private var details: DownloadDetails?
-    @State private var showsInfo = false
-    @State private var showsLog = false
+    @AppStorage("inspector.showsTechnical") private var showsTechnical = false
+    @AppStorage("inspector.showsLog") private var showsLog = false
 
     public init(model: DownloadsModel, id: UUID) {
         self.model = model
@@ -32,6 +35,7 @@ public struct DownloadDetailView: View {
         .safeAreaInset(edge: .top, spacing: 0) { header }
         .task(id: id) {
             // 2 Hz is plenty for segments and the log; progress numbers come from the list's 5 Hz snapshot.
+            details = nil
             while !Task.isCancelled {
                 details = await model.details(id)
                 try? await Task.sleep(for: .milliseconds(500))
@@ -46,16 +50,12 @@ public struct DownloadDetailView: View {
             Button { model.detailsID = nil } label: { Label("Close", systemImage: "xmark") }
                 .keyboardShortcut(.cancelAction)
                 .help("Close Details (Esc)")
+            Text("Inspector")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
             Spacer()
             if let download = item?.download {
-                ForEach(actions(for: download), id: \.self) { action in
-                    Button { action.perform(on: download, model: model) } label: { Label(action.title, systemImage: action.symbol) }
-                        .help(action.title)
-                }
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(download.url.absoluteString, forType: .string)
-                } label: { Label("Copy Link", systemImage: "link") }
+                Button { copy(download.url.absoluteString) } label: { Label("Copy Link", systemImage: "link") }
                     .help("Copy Link")
             }
         }
@@ -68,50 +68,131 @@ public struct DownloadDetailView: View {
         .overlay(alignment: .bottom) { Divider() }
     }
 
-    private func actions(for download: Download) -> [RowAction] {
-        RowAction.available(for: download).filter { ![.details, .viewError, .remove].contains($0) }
-    }
-
     // MARK: Content
 
     private func form(_ item: DownloadItem) -> some View {
         let download = item.download
         return Form {
-            Section { Summary(item: item) }
-            if download.state == .failed, let failure = download.failure {
-                Section {
-                    Label(failure.userMessage, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            if let samples = model.speedSamples[id], samples.contains(where: { $0 > 0 }) {
-                Section("Speed") { SpeedChart(samples: samples) }
-            }
-            if let segments = details?.segments, !segments.isEmpty, download.state != .completed {
-                Section("Connections") {
-                    SegmentsBar(segments: segments, total: download.totalBytes, live: download.state == .downloading)
-                    Text(connectionText).font(.caption).foregroundStyle(.secondary)
-                }
-            }
             Section {
-                LabeledContent("Source", value: DownloadSource.host(for: download.url))
-                LabeledContent("Saved to") {
-                    Button(savedFolder(download)) { model.reveal([download.id]) }
-                        .buttonStyle(.link)
-                        .help("Show in Finder")
-                }
-                DisclosureGroup("More Info", isExpanded: $showsInfo) { info(download) }
-                if let log = details?.log, !log.isEmpty {
-                    DisclosureGroup("Activity Log", isExpanded: $showsLog) { LogList(entries: log) }
+                Summary(item: item)
+                ActionBar(actions: primaryActions(for: download)) { $0.perform(on: download, model: model) }
+            }
+            stateSection(item)
+            Section("File Information") { fileInfo(download) }
+            Section {
+                DisclosureGroup("Technical Details", isExpanded: $showsTechnical) { technical(download) }
+                DisclosureGroup(isExpanded: $showsLog) {
+                    if let log = details?.log, !log.isEmpty {
+                        LogList(entries: log)
+                    } else {
+                        Text(details == nil ? "Loading…" : "No activity recorded yet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } label: {
+                    HStack {
+                        Text("Activity Log")
+                        Spacer()
+                        if let count = details?.log.count, count > 0 {
+                            Text("\(count)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                    }
                 }
             }
         }
         .formStyle(.grouped)
+        .animation(.easeOut(duration: 0.2), value: download.state)
     }
 
-    private func savedFolder(_ download: Download) -> String {
-        URL(filePath: download.destinationPath).lastPathComponent
+    /// Open + Show in Finder once finished; otherwise the lifecycle actions for this state, then Show in Finder
+    /// when a partial file exists.
+    private func primaryActions(for download: Download) -> [RowAction] {
+        var actions = RowAction.available(for: download).filter { ![.details, .viewError, .remove].contains($0) }
+        if download.state != .completed, download.receivedBytes > 0, !actions.contains(.reveal) { actions.append(.reveal) }
+        return actions
+    }
+
+    // MARK: State section
+
+    @ViewBuilder
+    private func stateSection(_ item: DownloadItem) -> some View {
+        let download = item.download
+        switch download.state {
+        case .probing, .downloading, .verifying:
+            Section("Transfer") {
+                if let samples = model.speedSamples[id], samples.contains(where: { $0 > 0 }) {
+                    SpeedChart(samples: samples)
+                }
+                if let left = item.secondsLeft, download.state == .downloading {
+                    LabeledContent("Time left", value: Format.timeLeft(left))
+                }
+                connections(download, live: download.state == .downloading)
+            }
+        case .paused:
+            Section("Paused") {
+                progress(item)
+                LabeledContent("On resume") {
+                    Text(download.acceptsRanges
+                         ? String(localized: "Continues from \(Format.bytes(download.receivedBytes))")
+                         : String(localized: "Restarts from the beginning"))
+                }
+                if !download.acceptsRanges {
+                    Text("This server doesn't support resuming, so progress will be lost.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                connections(download, live: false)
+            }
+        case .queued:
+            if download.receivedBytes > 0 { Section("Progress") { progress(item) } }
+        case .failed:
+            Section("Problem") {
+                if let failure = download.failure {
+                    Label(failure.userMessage, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(RocketColor.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(recoveryHint(failure))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Label("The download stopped without a reported reason.", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(RocketColor.danger)
+                }
+                if download.receivedBytes > 0 { progress(item) }
+            }
+        case .completed, .cancelled:
+            EmptyView()
+        }
+    }
+
+    private func progress(_ item: DownloadItem) -> some View {
+        let download = item.download
+        return VStack(alignment: .leading, spacing: 6) {
+            if let fraction = item.fraction {
+                ProgressView(value: min(1, max(0, fraction)))
+                    .tint(download.state == .failed ? RocketColor.danger : RocketColor.textSecondary)
+            }
+            HStack {
+                Text(download.totalBytes.map { String(localized: "\(Format.bytes(download.receivedBytes)) of \(Format.bytes($0))") }
+                     ?? Format.bytes(download.receivedBytes))
+                Spacer()
+                if let fraction = item.fraction { Text(fraction.formatted(.percent.precision(.fractionLength(0)))) }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
+    }
+
+    @ViewBuilder
+    private func connections(_ download: Download, live: Bool) -> some View {
+        if let segments = details?.segments, !segments.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                SegmentsBar(segments: segments, total: download.totalBytes, live: live)
+                Text(connectionText).font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var connectionText: String {
@@ -120,18 +201,54 @@ public struct DownloadDetailView: View {
         return String(localized: "\(details.activeConnections) of \(limit) connections active · \(count) segments")
     }
 
+    private func recoveryHint(_ failure: DownloadError) -> String {
+        if case .http(let status) = failure, [401, 403, 404, 410].contains(status) {
+            return String(localized: "The link may have expired. Use Refresh Link to point the download at a new URL.")
+        }
+        return switch failure.kind {
+        case .transient: String(localized: "This is usually temporary. Retry to try again.")
+        case .needsUser: String(localized: "Fix the problem above, then retry.")
+        case .fatal: String(localized: "Retrying with the same link is unlikely to help.")
+        }
+    }
+
+    // MARK: File Information
+
     @ViewBuilder
-    private func info(_ download: Download) -> some View {
+    private func fileInfo(_ download: Download) -> some View {
+        LabeledContent("Saved to") {
+            Button(URL(filePath: download.destinationPath).lastPathComponent) { model.reveal([download.id]) }
+                .buttonStyle(.link)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(download.destinationPath)
+        }
+        row("Source", DownloadSource.host(for: download.url))
+        row("Size", download.totalBytes.map(Format.bytes) ?? String(localized: "Unknown"))
+        row("Added", download.createdAt.formatted(date: .abbreviated, time: .shortened))
+        if let completed = download.completedAt {
+            row("Completed", completed.formatted(date: .abbreviated, time: .shortened))
+        }
+        row("Resumable", download.acceptsRanges ? String(localized: "Yes") : String(localized: "No"))
+    }
+
+    // MARK: Technical Details
+
+    @ViewBuilder
+    private func technical(_ download: Download) -> some View {
         row("URL", download.url.absoluteString, copyable: true)
         if let final = download.finalURL, final != download.url { row("Redirected to", final.absoluteString, copyable: true) }
-        row("Path", download.state == .completed ? download.fileURL.path : download.destinationPath)
+        row("Path", download.state == .completed ? download.fileURL.path : download.partFileURL.path, copyable: true)
+        row("Range requests", download.acceptsRanges
+            ? String(localized: "Supported, up to \(download.connections) connections")
+            : String(localized: "Not supported, single connection"))
+        row("ETag", download.etag ?? String(localized: "Not provided"), copyable: download.etag != nil)
+        row("Last modified", download.lastModified ?? String(localized: "Not provided"))
+        if let checksum = download.expectedChecksum {
+            row("\(checksum.algorithm.title)", checksum.value, copyable: true)
+        }
         row("Queue", model.queues.first { $0.id == download.queueID }?.name ?? download.queueID)
-        row("Resumable", download.acceptsRanges ? String(localized: "Yes") : String(localized: "No, single connection"))
         if let limit = download.speedLimit { row("Speed limit", Format.speed(Double(limit))) }
-        if let etag = download.etag { row("ETag", etag) }
-        if let modified = download.lastModified { row("Last modified", modified) }
-        row("Added", download.createdAt.formatted(date: .abbreviated, time: .shortened))
-        if let completed = download.completedAt { row("Completed", completed.formatted(date: .abbreviated, time: .shortened)) }
     }
 
     private func row(_ label: LocalizedStringKey, _ value: String, copyable: Bool = false) -> some View {
@@ -143,10 +260,7 @@ public struct DownloadDetailView: View {
                     .textSelection(.enabled)
                     .help(value)
                 if copyable {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(value, forType: .string)
-                    } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    Button { copy(value) } label: { Label("Copy", systemImage: "doc.on.doc") }
                         .buttonStyle(.borderless)
                         .labelStyle(.iconOnly)
                         .help("Copy")
@@ -154,32 +268,63 @@ public struct DownloadDetailView: View {
             }
         }
     }
+
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
 }
 
-/// Progress ring around the file icon, then name, status, bytes, and live speed with time left.
+/// The state's actions as full-width buttons; the first one is the default.
+private struct ActionBar: View {
+    let actions: [RowAction]
+    let perform: (RowAction) -> Void
+
+    var body: some View {
+        if !actions.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(Array(actions.enumerated()), id: \.element) { index, action in
+                    let button = Button { perform(action) } label: {
+                        Label(action.title, systemImage: action.symbol).frame(maxWidth: .infinity)
+                    }
+                    .controlSize(.large)
+                    .help(action.title)
+                    if index == 0 { button.buttonStyle(.borderedProminent) } else { button.buttonStyle(.bordered) }
+                }
+            }
+            .labelStyle(.titleOnly)
+            .lineLimit(1)
+        }
+    }
+}
+
+/// Progress ring around the file icon (only while unfinished), then name, status and size.
 private struct Summary: View {
     let item: DownloadItem
 
     private var download: Download { item.download }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(alignment: .top, spacing: 14) {
             ZStack {
-                Circle().stroke(Color(nsColor: .quaternaryLabelColor), lineWidth: 4)
-                Circle()
-                    .trim(from: 0, to: ringFraction)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.2), value: ringFraction)
-                FileThumbnail(item: item, size: 30)
+                if download.state != .completed {
+                    Circle().stroke(Color(nsColor: .quaternaryLabelColor), lineWidth: 4)
+                    Circle()
+                        .trim(from: 0, to: ringFraction)
+                        .stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: 0.2), value: ringFraction)
+                }
+                FileThumbnail(item: item, size: download.state == .completed ? 40 : 30)
             }
             .frame(width: 58, height: 58)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(download.fileName)
                     .font(.headline)
-                    .lineLimit(2)
+                    .lineLimit(3)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
+                    .help(download.fileName)
                 HStack(spacing: 4) {
                     StatusGlyph(download.state.glyph(item.fraction), size: 11)
                     Text(statusText).foregroundStyle(tint)
@@ -197,15 +342,14 @@ private struct Summary: View {
                         .contentTransition(.numericText())
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(item.accessibilityLabel)
     }
 
-    private var ringFraction: Double {
-        download.state == .completed ? 1 : min(1, max(0, item.fraction ?? 0))
-    }
+    private var ringFraction: Double { min(1, max(0, item.fraction ?? 0)) }
 
     private var tint: Color {
         switch download.state {
@@ -223,7 +367,9 @@ private struct Summary: View {
 
     private var bytesText: String {
         let received = Format.bytes(download.receivedBytes)
-        guard let total = download.totalBytes else { return received }
+        guard let total = download.totalBytes else {
+            return download.state == .completed ? received : String(localized: "\(received) of unknown size")
+        }
         return download.state == .completed ? Format.bytes(total) : String(localized: "\(received) of \(Format.bytes(total))")
     }
 }
