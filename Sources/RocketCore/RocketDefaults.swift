@@ -15,6 +15,7 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
         static let sleepPrevention = "sleepPrevention"
         static let autoSort = "autoSortByType"
         static let dockProgress = "showDockProgress"
+        static let downloadWindow = "showDownloadWindow"
         static let watchClipboard = "watchClipboard"
         static let clipboardExtensions = "clipboardExtensions"
         static let retryMaxAttempts = "retryMaxAttempts"
@@ -77,6 +78,12 @@ public struct RocketDefaults: @unchecked Sendable { // UserDefaults is thread-sa
     public var showDockProgress: Bool {
         get { store.object(forKey: Key.dockProgress) as? Bool ?? true }
         nonmutating set { store.set(newValue, forKey: Key.dockProgress) }
+    }
+
+    /// A progress window opens for each new download.
+    public var showDownloadWindow: Bool {
+        get { store.object(forKey: Key.downloadWindow) as? Bool ?? true }
+        nonmutating set { store.set(newValue, forKey: Key.downloadWindow) }
     }
 
     /// Offer copied download links (FR-INT-03). Off until the user opts in.

@@ -24,6 +24,7 @@ public final class AppSettings {
     public var sleepPrevention: SleepPrevention { didSet { defaults.sleepPrevention = sleepPrevention } }
     public var autoSort: Bool { didSet { defaults.autoSort = autoSort } }
     public var showDockProgress: Bool { didSet { defaults.showDockProgress = showDockProgress } }
+    public var showDownloadWindow: Bool { didSet { defaults.showDownloadWindow = showDownloadWindow } }
     /// The agent reads it before each request.
     public var proxy: ProxySettings { didSet { defaults.proxy = proxy } }
     public var watchClipboard: Bool {
@@ -55,6 +56,7 @@ public final class AppSettings {
         sleepPrevention = defaults.sleepPrevention
         autoSort = defaults.autoSort
         showDockProgress = defaults.showDockProgress
+        showDownloadWindow = defaults.showDownloadWindow
         proxy = defaults.proxy
         watchClipboard = defaults.watchClipboard
         clipboardExtensions = defaults.clipboardExtensions.joined(separator: ", ")
@@ -194,6 +196,9 @@ struct GeneralSettings: View {
                 }
                 RocketFormRow(String(localized: "Show progress and count on the Dock icon")) {
                     Toggle("Show progress and count on the Dock icon", isOn: $settings.showDockProgress).labelsHidden().toggleStyle(.rocketSwitch)
+                }
+                RocketFormRow(String(localized: "Show a progress window for new downloads")) {
+                    Toggle("Show a progress window for new downloads", isOn: $settings.showDownloadWindow).labelsHidden().toggleStyle(.rocketSwitch)
                 }
             }
             RocketFormSection(String(localized: "Sound Effects"),

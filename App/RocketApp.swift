@@ -24,7 +24,7 @@ struct RocketApp: App {
         }
         .windowToolbarStyle(.unified)
         .commands {
-            DownloadCommands(downloads: app.downloads)
+            DownloadCommands(downloads: app.downloads, windows: app.downloadWindows)
             UpdateCommands(updater: app.updater)
         }
         Settings {
@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let agent = AgentConnection()
     let downloads = DownloadsModel()
     let updater = Updater()
+    lazy var downloadWindows = DownloadWindows(model: downloads)
     private var notifier: Notifier?
     private(set) var sounds: SoundManager?
     private var watcher: ClipboardWatcher?
@@ -73,7 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         downloads.onStateTransition = { id, previous, next in
             sounds.handleTransition(id: id, from: previous, to: next)
         }
+        let windows = downloadWindows
         downloads.onUpdate = { [dock, downloads, sounds] in
+            windows.update(enabled: settings.showDownloadWindow)
             sounds.pruneStarted(excluding: Set(downloads.items.map(\.id)))
             dock.update(count: downloads.transferringCount + downloads.queuedCount, fraction: downloads.overallFraction,
                         enabled: settings.showDockProgress)
@@ -109,6 +112,7 @@ struct MenuBarContent: View {
 /// Menu commands for the selected downloads (keyboard: ⌘O reveals in Finder).
 struct DownloadCommands: Commands {
     let downloads: DownloadsModel
+    let windows: DownloadWindows
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -127,6 +131,9 @@ struct DownloadCommands: Commands {
             }
             .keyboardShortcut("i")
             .disabled(downloads.detailsID == nil && downloads.selection.count != 1)
+            Button("Show Progress Window") { downloads.selection.first.map { windows.show($0) } }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+                .disabled(downloads.selection.count != 1)
             Button("Show in Finder") { downloads.reveal(downloads.selection) }
                 .keyboardShortcut("o")
                 .disabled(downloads.selection.isEmpty)
