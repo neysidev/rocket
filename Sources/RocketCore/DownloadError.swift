@@ -51,6 +51,37 @@ public enum DownloadError: Error, Sendable, Hashable, Codable {
 }
 
 public extension DownloadError {
+    /// A few words for tight spaces like the table's Progress column; `userMessage` has the full sentence.
+    var shortMessage: String {
+        switch self {
+        case .http(let status):
+            switch status {
+            case 401, 403: String(localized: "Access denied")
+            case 404: String(localized: "File not found")
+            case 410: String(localized: "Link expired")
+            case 429, 503: String(localized: "Server busy")
+            default: String(localized: "Server error \(status)")
+            }
+        case .network(let code):
+            switch code {
+            case -1003, -1006: String(localized: "Server not found")
+            case -1001: String(localized: "Connection timed out")
+            case -1009: String(localized: "Offline")
+            case -1004: String(localized: "Can't connect")
+            case -1200, -1201, -1202, -1203, -1204, -1206, -1022: String(localized: "Secure connection failed")
+            default: String(localized: "Connection interrupted")
+            }
+        case .remoteFileChanged: String(localized: "File changed on server")
+        case .invalidRangeResponse: String(localized: "Unexpected server data")
+        case .sizeMismatch: String(localized: "Wrong file size")
+        case .checksumMismatch: String(localized: "Checksum mismatch")
+        case .diskFull: String(localized: "Disk full")
+        case .destinationNotWritable: String(localized: "Folder not writable")
+        case .invalidURL: String(localized: "Unsupported link")
+        case .io: String(localized: "File error")
+        }
+    }
+
     /// The one place failures become user-facing text (TRD: errors mapped in one place, localized).
     var userMessage: String {
         switch self {
