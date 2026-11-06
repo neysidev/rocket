@@ -7,9 +7,13 @@ import SwiftUI
 struct MainWindow: View {
     @Bindable var downloads: DownloadsModel
     @Environment(\.soundEffects) private var soundEffects
+    @AppStorage("sidebarCollapsed") private var sidebarCollapsed = false
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: Binding(
+            get: { sidebarCollapsed ? .detailOnly : .all },
+            set: { sidebarCollapsed = $0 == .detailOnly }
+        )) {
             DownloadSidebar(model: downloads) { AgentStatusView() }
                 .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 300)
         } detail: {

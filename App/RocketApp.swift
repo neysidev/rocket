@@ -24,6 +24,7 @@ struct RocketApp: App {
         }
         .windowToolbarStyle(.unified)
         .commands {
+            SidebarCommands()
             DownloadCommands(downloads: app.downloads, windows: app.downloadWindows)
             UpdateCommands(updater: app.updater)
         }

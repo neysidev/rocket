@@ -156,7 +156,8 @@ public enum SidebarFilter: Identifiable, Hashable, Sendable {
         case .queued: download.state == .queued
         case .completed: download.state == .completed
         case .failed: download.state == .failed
-        case .queue(let id): download.queueID == id && download.state != .cancelled
+        // Every download in the queue, whatever its state, so queue counts add up to All.
+        case .queue(let id): download.queueID == id
         }
     }
 }
